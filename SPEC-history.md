@@ -126,3 +126,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-22 · R16 · changed · Factotum's field-group sync replaces Lunar's whole-record log · owner
 - 2026-11-22 · R15 · changed · field groups with stamps, per R16 · owner
 - 2026-11-22 · R10 · changed · SQLCipher on Android; Windows encryption decided in its phase · owner
+- 2026-11-22 · R112 · changed · Commons Compress with a header-sealing patch replaces a native 7-Zip library · owner

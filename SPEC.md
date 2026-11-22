@@ -468,13 +468,17 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R112 · 7-Zip writer
 
-**Rule:** Backups are written with a native 7-Zip library for Android and Windows, chosen and licence-checked in phase 1.
+**Rule:** Backups are written and read with Apache Commons Compress on both platforms. A patched copy of its 7-Zip writer also seals the header, so file names are hidden without the passphrase.
 
-**Why:** No pure-Kotlin library writes encrypted 7-Zip archives.
+**Why:** Pure Java, with no RAR code and no native engine to keep current, the same on Android and Windows.
 
-**Acceptance:** A backup written on Android and one written on Windows both open in desktop 7-Zip with the passphrase.
+**Evidence:** `docs/decisions/2026-11-22-7zip-library.md`: the patched writer's archive opens in desktop 7-Zip 25.01 with the passphrase, shows no names without it, and reads back in Commons Compress; checked 2026-11-22.
 
-**Not:** An AES-256 ZIP holding one inner archive: it hides the names but takes two steps to open.
+**Acceptance:** A backup written on Android and one written on Windows both open in desktop 7-Zip with the passphrase, and `7z l` without it lists no names.
+
+**Not:**
+- **7-Zip-JBinding:** its native libraries carry RAR code under the unRAR restriction, which GPL-3.0 does not allow, and the Android build runs the old 7-Zip 16.02 engine.
+- **An AES-256 ZIP holding one inner archive:** it hides the names, but takes two steps to open.
 
 **Since:** 2026-11-22 · owner · agreed rewording
 
@@ -1552,7 +1556,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R20 · Units are stored canonically: Changing the weight display from kg to lb changes no stored value.
 - R21 · Attachments: After a PDF is imported, the original is unchanged in its folder and the copy opens from inside MedicAll.
 - R22 · Backups: A backup opens in 7-Zip with the passphrase, its file list is hidden without it, and the CSV holds every result line.
-- R112 · 7-Zip writer: A backup written on Android and one written on Windows both open in desktop 7-Zip with the passphrase.
+- R112 · 7-Zip writer: A backup written on Android and one written on Windows both open in desktop 7-Zip with the passphrase, and `7z l` without it lists no names.
 - R23 · File integrity: A file altered by one byte is reported at the next check and restored from a backup holding the intact copy.
 - R24 · Link to the original: Moving a linked original raises the R73 notification for a missing original.
 - R25 · Sharing: After a share, the temporary copy is gone from the cache; the warning shows once per device.
