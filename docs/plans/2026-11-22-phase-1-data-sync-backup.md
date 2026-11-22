@@ -431,3 +431,4 @@ Nothing: the repository holds no code yet. Factotum's offline `./gradlew build` 
 - Task 2: done — commit e16849b — pushed `phase-1`, PR #1 opened; speccheck left out of CI (the script is in a private plugin with no licence), owner to decide
 - Task 3: done — `./gradlew :core:desktopTest` → 28 tests, 0 failures
 - Task 4: done — `./gradlew :core:desktopTest :core:compileAndroidMain` → CryptoTest 6 passed; the RFC 7914 vector was also checked with Python hashlib. Plan deviation: `expect` declarations are primitives (`pbkdf2Sha256`, `aesGcmSeal`/`Open`, `hmacSha256`, `sha256`, `secureRandomBytes`), with `KeyDerivation` and `LineCipher` in common code
+- Task 5: done — `./gradlew :core:desktopTest` → 39 tests, 0 failures (KeyFolderTest 5). `KeyFiles` also has `delete` (settleConflicts needs it)

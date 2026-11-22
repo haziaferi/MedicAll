@@ -31,6 +31,9 @@ class LineCipher(private val keys: Map<String, ByteArray>, val currentKeyId: Str
     fun seal(plain: ByteArray): String =
         currentKeyId + "." + Base64.UrlSafe.encode(aesGcmSeal(keys.getValue(currentKeyId), plain))
 
+    /** Every key this cipher can open lines with, by key id; only [KeyFolder] reads it, to carry them across a passphrase change. */
+    internal fun knownKeys(): Map<String, ByteArray> = keys
+
     /** The plain bytes, or null when the key id is unknown, the text is not a sealed line, or it was altered. */
     fun open(line: String): ByteArray? {
         val dot = line.indexOf('.')
