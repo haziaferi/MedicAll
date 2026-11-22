@@ -12,6 +12,9 @@ import com.hazia.medicall.data.MedicAllDatabase
 import com.hazia.medicall.data.NAME
 import com.hazia.medicall.data.PROFILE
 import com.hazia.medicall.data.REMOVED
+import com.hazia.medicall.data.blob.BlobSync
+import com.hazia.medicall.data.blob.Blobs
+import com.hazia.medicall.data.blob.MemoryBlobStore
 import com.hazia.medicall.data.openMedicAllDatabase
 import com.hazia.medicall.data.syncedTables
 import kotlinx.coroutines.runBlocking
@@ -89,6 +92,9 @@ internal class World(private val dir: File, seed: Int, private val segmentBytes:
         val sync = FolderSync(
             db, syncthing.folder(name), id, clock, tables, cipher, wall, segmentBytes, snapshotEvery, recovered = recovered,
         )
+        val blobStore = MemoryBlobStore()
+        val blobs = Blobs(writes, db, blobStore, cipher)
+        private val blobSync = BlobSync(db, syncthing.folder(name), blobStore, cipher, wall)
 
         /** A new profile, every group stamped with one tick. */
         fun create(name: String = "Profile ${this.name}@${syncthing.now}"): String {
@@ -146,8 +152,11 @@ internal class World(private val dir: File, seed: Int, private val segmentBytes:
 
         fun blobRefs(): Map<String, Row> = runBlocking { tables.getValue(BLOB_REF).all() }.associateBy { it.id }
 
-        fun import() = runBlocking { sync.import() }
-        fun export() = runBlocking { sync.export() }
+        /** Reads the logs, then fetches the files they name ([BlobSync]). */
+        fun import() = runBlocking { sync.import().also { blobSync.exchange() } }
+
+        /** Publishes the files first, so a peer reading the logs finds them, then writes the logs. */
+        fun export() = runBlocking { blobSync.exchange(); sync.export() }
 
         fun held(): Map<Pair<String, String>, Group> =
             rows().values.flatMap { r -> r.groups.map { (g, v) -> (r.id to g) to v } }.toMap()

@@ -4,6 +4,8 @@ import androidx.room.ConstructedBy
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
+import com.hazia.medicall.data.blob.BlobDao
+import com.hazia.medicall.data.blob.BlobSeenEntity
 import com.hazia.medicall.data.sync.AskEntity
 import com.hazia.medicall.data.sync.BaseEntity
 import com.hazia.medicall.data.sync.ClockEntity
@@ -18,7 +20,8 @@ import com.hazia.medicall.data.sync.WaitingEntity
 
 /**
  * MedicAll's one database: Factotum's sync tables (SPEC:R16), then the records, each with a stamp
- * per field group and a foreign key to its profile (SPEC:R15).
+ * per field group and a foreign key to its profile (SPEC:R15), then the local, never synced
+ * `blob_seen` that [com.hazia.medicall.data.blob.BlobSync] counts its 30 days in.
  */
 @Database(
     entities = [
@@ -26,6 +29,7 @@ import com.hazia.medicall.data.sync.WaitingEntity
         BaseEntity::class, AskEntity::class, ReadEntity::class, OutboxEntity::class, KnownTablesEntity::class,
         WaitingEntity::class, LostEntity::class,
         ProfileEntity::class, BlobRefEntity::class,
+        BlobSeenEntity::class,
     ],
     version = SCHEMA_VERSION,
     exportSchema = true,
@@ -35,6 +39,7 @@ abstract class MedicAllDatabase : RoomDatabase() {
     internal abstract fun syncDao(): SyncDao
     internal abstract fun profileDao(): ProfileDao
     internal abstract fun blobRefDao(): BlobRefDao
+    internal abstract fun blobDao(): BlobDao
 }
 
 /**
