@@ -43,7 +43,7 @@ Nothing: the repository holds no code yet. Factotum's offline `./gradlew build` 
 
 | Case | Behaviour | Test |
 |---|---|---|
-| Two devices first started offline, each creating its own key file | the file with the lower key id wins; the losing device re-encrypts its own files under the winning key and asks for that key's passphrase | `KeyFolderTest.racingFirstRunsSettleOnLowerKeyId`, Task 5 |
+| Two devices first started offline, each creating its own key file | the file with the lower key id wins; the losing key is retired, not deleted, and its lines stay readable | `KeyFolderTest.racingFirstRunsSettleOnLowerKeyIdAndKeepBothKeys_SPEC_R16` and `foldAndChangeMadeApartLoseNoKey_SPEC_R16`, Task 5 |
 | Wrong passphrase on a second device | refused with "Wrong passphrase"; nothing is written to the folder | `KeyFolderTest.wrongPassphraseIsRefused`, Task 5 |
 | Passphrase changed while another device is offline | the offline device asks once for the new passphrase and still reads lines written under the old key | `KeyFolderTest.oldLinesReadAfterChange`, Task 5 |
 | A line or file altered in the folder | the line is skipped and counted, and the file is reported as damaged; nothing crashes and nothing is applied | `EncryptedFolderSyncTest.tamperedLineIsSkipped` (Task 8), `BlobSyncTest.tamperedBlobIsNotStored` (Task 10) |
@@ -153,12 +153,13 @@ Nothing: the repository holds no code yet. Factotum's offline `./gradlew build` 
 
 **Provides:**
 - **`keys/keyinfo.json` in the sync folder, readable by every device:** the key id, the salt, the iteration count, a check value (HMAC-SHA256 of the key over `"medicall-key-check"`), and the older keys, each sealed with the current key.
-- **`interface KeyFiles { fun read(path: String): ByteArray?; fun replace(path: String, bytes: ByteArray); fun list(dir: String): List<String> }`:** the subset of `SyncFolder` this needs. `SyncFolder` arrives in Task 8 and implements it.
-- **`class KeyFolder(files: KeyFiles)`:**
+- **`interface KeyFiles { fun read(path: String): ByteArray?; fun replace(path: String, bytes: ByteArray); fun list(dir: String): List<String>; fun delete(path: String) }`:** the subset of `SyncFolder` this needs. `SyncFolder` arrives in Task 8 and implements it.
+- **`class KeyFolder(files: KeyFiles)`** (revised after the Tasks 3–5 review, so that no key is ever lost):
   - `fun create(passphrase: CharArray): LineCipher`;
-  - `fun unlock(passphrase: CharArray): LineCipher?`, null on a wrong passphrase;
-  - `fun change(old: CharArray, new: CharArray): LineCipher`: a new key id and salt, with the old key sealed into the chain;
-  - `fun settleConflicts(): Boolean`: reads `keyinfo*.sync-conflict-*` copies and keeps the lowest key id.
+  - `fun unlock(passphrase: CharArray): Unlock`, one of `Unlocked(cipher)`, `WrongPassphrase`, `NoKeyFile` and `Damaged`. The file is validated first (version, ids, salt and check sizes, 100,000 to 10,000,000 rounds), and it never throws on a bad file;
+  - `fun change(old: CharArray, new: CharArray): LineCipher`: settles conflict copies first, then writes a new key id and salt with every known key sealed into the chain;
+  - `fun settleConflicts(): Boolean`: the lowest key id stays the folder's key, with the union of every same-id copy's chain. Every other key file moves to `keys/retired/`, never deleted, and a copy that can't be read moves to `keys/unreadable/`;
+  - `fun fold(passphrase: CharArray, retiredPassphrase: CharArray): Boolean` and `fun unfoldedKeyIds(passphrase: CharArray): List<String>`: a retired key made with another passphrase joins the chain when that passphrase is given.
 - **`const val MIN_PASSPHRASE = 12`:** provisional, see Questions for you, item 3. `create` and `change` reject anything shorter with `IllegalArgumentException("Passphrase too short")`.
 
 - [ ] Write the tests: `secondDeviceUnlocksWithSamePassphrase_SPEC_R109`, `wrongPassphraseIsRefused`, `oldLinesReadAfterChange`, `shortPassphraseRejected`, `racingFirstRunsSettleOnLowerKeyId`. All use an in-memory `KeyFiles`.
@@ -434,3 +435,4 @@ Nothing: the repository holds no code yet. Factotum's offline `./gradlew build` 
 - Task 5: done — `./gradlew :core:desktopTest` → 39 tests, 0 failures (KeyFolderTest 5). `KeyFiles` also has `delete` (settleConflicts needs it)
 - Tasks 3-5 review: needs fixes (H1 a losing key file was destroyed; H2 a damaged key file could hang or crash unlock; M1-M3; Lows). Fix round 1 — commit 9a62a67 — `./gradlew :core:desktopTest :core:compileAndroidMain` → CryptoTest 7, KeyFolderTest 12, all core tests pass; scoped re-review started. Left open: L2 (separate subkeys for HMAC and GCM), L7
 - PR #1: CodeQL "Analyze" failed because the repository has CodeQL default setup on; the custom workflow was removed (08ef94a). Default setup lists no languages yet: the owner may need to re-run it once Kotlin is on main
+- Tasks 3-5 re-review: needs another round (retired files deleted by key id alone; same-id copies dropped; unreadable copies destroyed; every unlock paid for every retired file). Fix round 2 — retired files are never deleted, same-id chains merge, unreadable copies go to keys/unreadable/, at most 8 unknown retired files are derived per unlock — `./gradlew :core:desktopTest :core:compileAndroidMain` → KeyFolderTest 15 passed, all core tests pass. Left open: L2 (separate subkeys), a test of the 8-file cap

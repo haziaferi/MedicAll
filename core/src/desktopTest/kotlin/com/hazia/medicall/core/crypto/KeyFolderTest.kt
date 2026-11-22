@@ -167,13 +167,91 @@ class KeyFolderTest {
         val winningPass = if (winner.unlock(passphrase) is Unlock.Unlocked) passphrase else other
         val losingPass = if (winningPass === passphrase) other else passphrase
 
-        assertTrue(winner.retiredKeyIds().isNotEmpty(), "the losing key waits, retired, until someone folds it in")
+        assertTrue(winner.unfoldedKeyIds(winningPass).isNotEmpty(), "the losing key waits, retired, until someone folds it in")
         assertTrue(winner.fold(winningPass, losingPass))
 
         val device = folder(shared).open(winningPass)
         device.reads(lineA, "written on A")
         device.reads(lineB, "written on B")
-        assertTrue(folder(shared).retiredKeyIds().isEmpty())
+        assertTrue(folder(shared).unfoldedKeyIds(winningPass).isEmpty())
+        assertTrue(shared.files.keys.any { it.startsWith(KeyFolder.RETIRED + "/") }, "retired files are kept")
+    }
+
+    private fun MemoryFiles.copy() = MemoryFiles().also { c -> c.files.putAll(files.mapValues { it.value.copyOf() }) }
+
+    /** Syncthing meets two edited copies of the folder: [kept]'s key file stays, [renamed]'s becomes a conflict copy, every other file is the union. */
+    private fun meet(kept: MemoryFiles, renamed: MemoryFiles): MemoryFiles {
+        val merged = MemoryFiles()
+        merged.files.putAll(renamed.files)
+        merged.files.putAll(kept.files)
+        merged.files["keys/keyinfo.sync-conflict-20261122-120000-XYZ.json"] = renamed.files.getValue(KeyFolder.PATH)
+        return merged
+    }
+
+    // SPEC:R16 a fold on one device and a passphrase change on another, made apart, lose no key.
+    @Test
+    fun foldAndChangeMadeApartLoseNoKey_SPEC_R16() {
+        val p = passphrase
+        val q = other
+        val n = "the third passphrase".toCharArray()
+        // A folder whose key X (passphrase p) has a retired key R (passphrase q) not yet folded in.
+        val (start, lineA, lineB) = racingFolders(p, q)
+        folder(start).settleConflicts()
+        val winningPass = if (folder(start).unlock(p) is Unlock.Unlocked) p else q
+        val losingPass = if (winningPass === p) q else p
+
+        val deviceA = start.copy()
+        folder(deviceA).fold(winningPass, losingPass)
+        val deviceB = start.copy()
+        val lineZ = folder(deviceB).change(winningPass, n).seal("written after the change".encodeToByteArray())
+
+        for (shared in listOf(meet(deviceA, deviceB), meet(deviceB, deviceA))) {
+            folder(shared).settleConflicts()
+            val passes = listOf(p, q, n)
+            val current = passes.first { folder(shared).unlock(it) is Unlock.Unlocked }
+            passes.filter { it !== current }.forEach { folder(shared).fold(current, it) }
+
+            val device = folder(shared).open(current)
+            device.reads(lineA, "written on A")
+            device.reads(lineB, "written on B")
+            device.reads(lineZ, "written after the change")
+        }
+    }
+
+    @Test
+    fun sameIdCopiesMergeTheirChains() {
+        val q2 = "yet another passphrase".toCharArray()
+        val start = MemoryFiles()
+        folder(start).create(passphrase)
+        // Two retired keys with their own passphrases, folded in on two devices apart.
+        val r1 = MemoryFiles().also { folder(it).create(other) }
+        val r2 = MemoryFiles().also { folder(it).create(q2) }
+        val line1 = folder(r1).open(other).seal("one".encodeToByteArray())
+        val line2 = folder(r2).open(q2).seal("two".encodeToByteArray())
+        start.files["${KeyFolder.RETIRED}/r1.json"] = r1.files.getValue(KeyFolder.PATH)
+        start.files["${KeyFolder.RETIRED}/r2.json"] = r2.files.getValue(KeyFolder.PATH)
+        val a = start.copy().also { folder(it).fold(passphrase, other) }
+        val b = start.copy().also { folder(it).fold(passphrase, q2) }
+        val shared = meet(a, b)
+        shared.files.keys.filter { it.startsWith(KeyFolder.RETIRED) }.toList().forEach { shared.files.remove(it) } // the retired files are gone: only the chains hold the keys
+
+        folder(shared).settleConflicts()
+
+        val device = folder(shared).open(passphrase)
+        device.reads(line1, "one")
+        device.reads(line2, "two")
+    }
+
+    @Test
+    fun unreadableCopyIsKeptAside() {
+        val shared = MemoryFiles()
+        folder(shared).create(passphrase)
+        shared.files["keys/keyinfo.sync-conflict-20261122-130000-QRS.json"] = "{\"version\":2}".encodeToByteArray()
+
+        folder(shared).settleConflicts()
+
+        assertEquals("{\"version\":2}", shared.files["${KeyFolder.UNREADABLE}/keyinfo.sync-conflict-20261122-130000-QRS.json"]?.decodeToString())
+        assertTrue(shared.files.keys.none { it.startsWith("keys/keyinfo.sync-conflict") })
     }
 
     @Test
