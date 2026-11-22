@@ -73,16 +73,41 @@ class KeyFolderTest {
         assertEquals(Unlock.Damaged, KeyFolder(shared).unlock(passphrase), "1,000 rounds is under MIN_FILE_ITERATIONS")
     }
 
+    // SPEC:R109 one damaged entry in the chain does not lock the person out of everything else.
     @Test
-    fun tamperedChainEntryIsDamagedNotWrong() {
+    fun tamperedChainEntryIsReportedNotALockout_SPEC_R109() {
         val shared = MemoryFiles()
-        folder(shared).create(passphrase)
-        folder(shared).change(passphrase, other)
+        val oldId = folder(shared).create(passphrase).currentKeyId
+        val line = folder(shared).change(passphrase, other).seal("written after".encodeToByteArray())
         val text = shared.files.getValue(KeyFolder.PATH).decodeToString()
         val tampered = Regex("(\"older\":\\{\"[0-9a-f]+\":\"[0-9a-f]+\\.)(.)").replace(text) { it.groupValues[1] + if (it.groupValues[2] == "A") "B" else "A" }
         shared.files[KeyFolder.PATH] = tampered.encodeToByteArray()
 
-        assertEquals(Unlock.Damaged, folder(shared).unlock(other))
+        val unlocked = assertIs<Unlock.Unlocked>(folder(shared).unlock(other))
+        assertEquals(listOf(oldId), unlocked.unreadableKeyIds)
+        unlocked.cipher.reads(line, "written after")
+    }
+
+    // SPEC:R16 a conflict copy is merged, then deleted: a bad copy with the folder's own key id cannot spoil it.
+    @Test
+    fun badSameIdCopyCannotSpoilTheFolder_SPEC_R16() {
+        val shared = MemoryFiles()
+        val before = folder(shared).create(passphrase).seal("before".encodeToByteArray())
+        val line = folder(shared).change(passphrase, other).seal("after".encodeToByteArray())
+        val good = shared.files.getValue(KeyFolder.PATH)
+        val text = good.decodeToString()
+        // The copy keeps the id, salt and check, but every chain entry is garbled and one bogus entry is added.
+        val garbled = Regex("(\"older\":\\{\"[0-9a-f]+\":\"[0-9a-f]+\\.)([^\"]*)").replace(text) { it.groupValues[1] + "AAAA" }
+            .replace("\"older\":{", "\"older\":{\"00000000000000ff\":\"x.y\",")
+        shared.files["keys/keyinfo.sync-conflict-20261122-140000-BAD.json"] = garbled.encodeToByteArray()
+
+        folder(shared).settleConflicts()
+
+        val unlocked = assertIs<Unlock.Unlocked>(folder(shared).unlock(other))
+        unlocked.cipher.reads(before, "before")
+        unlocked.cipher.reads(line, "after")
+        assertEquals(listOf("00000000000000ff"), unlocked.unreadableKeyIds)
+        assertTrue(shared.files.entries.any { it.key.startsWith(KeyFolder.RETIRED + "/") && it.value.contentEquals(good) }, "the folder's original file is kept")
     }
 
     // SPEC:R109 the person can change the passphrase; each other device then asks for the new one once.
@@ -219,7 +244,7 @@ class KeyFolderTest {
     }
 
     @Test
-    fun sameIdCopiesMergeTheirChains() {
+    fun sameIdCopiesMergeTheirChains_SPEC_R16() {
         val q2 = "yet another passphrase".toCharArray()
         val start = MemoryFiles()
         folder(start).create(passphrase)
@@ -243,14 +268,16 @@ class KeyFolderTest {
     }
 
     @Test
-    fun unreadableCopyIsKeptAside() {
+    fun unreadableCopyIsKeptAside_SPEC_R16() {
         val shared = MemoryFiles()
         folder(shared).create(passphrase)
         shared.files["keys/keyinfo.sync-conflict-20261122-130000-QRS.json"] = "{\"version\":2}".encodeToByteArray()
 
         folder(shared).settleConflicts()
 
-        assertEquals("{\"version\":2}", shared.files["${KeyFolder.UNREADABLE}/keyinfo.sync-conflict-20261122-130000-QRS.json"]?.decodeToString())
+        val kept = shared.files.filterKeys { it.startsWith("${KeyFolder.UNREADABLE}/keyinfo.sync-conflict-20261122-130000-QRS.json-") }
+        assertEquals(listOf("{\"version\":2}"), kept.values.map { it.decodeToString() })
+        assertEquals(kept.keys.toList(), folder(shared).unreadableKeyFiles())
         assertTrue(shared.files.keys.none { it.startsWith("keys/keyinfo.sync-conflict") })
     }
 
