@@ -424,3 +424,9 @@ Nothing: the repository holds no code yet. Factotum's offline `./gradlew build` 
 - The instrumented suites `EncryptedDatabaseTest` and `SafSyncFolderTest` pass on the 6T.
 - `python tools/speccheck.py SPEC.md` reports 0 BLOCK, and the `Gate` and CodeQL checks are green on the last pull request.
 - `docs/walks/2026-phase-1.md` records all six walk steps passing on the 6T and the 9 Pro, which is R100's phase 1 gate.
+
+## Progress
+
+- Task 1: done — commit fe71b86 — `./gradlew :core:desktopTest :android:testDebugUnitTest :android:assembleDebug` → BUILD SUCCESSFUL, 2 tests; the R12 test fails when INTERNET is added (checked by hand)
+- Task 2: done — commit e16849b — pushed `phase-1`, PR #1 opened; speccheck left out of CI (the script is in a private plugin with no licence), owner to decide
+- Task 3: done — `./gradlew :core:desktopTest` → 28 tests, 0 failures
