@@ -24,11 +24,16 @@ interface KeyFiles {
 
 /** What [KeyFolder.unlock] found. Only [Unlocked] carries a cipher; the others tell the person what is wrong. */
 sealed interface Unlock {
-    class Unlocked(val cipher: LineCipher) : Unlock
+    /**
+     * The passphrase opens the folder's key. [unreadableKeyIds] names the older keys in its chain that did
+     * not open (an entry altered or cut short): lines written under them stay unreadable until a copy of
+     * that key turns up, but everything else works.
+     */
+    class Unlocked(val cipher: LineCipher, val unreadableKeyIds: List<String> = emptyList()) : Unlock
     data object WrongPassphrase : Unlock
     data object NoKeyFile : Unlock
 
-    /** The key file, or one key in its chain, cannot be read: it was altered or cut short, so no passphrase opens it. */
+    /** The key file itself cannot be read: it was altered, cut short or written by another format, so no passphrase opens it. */
     data object Damaged : Unlock
 }
 
@@ -38,10 +43,15 @@ sealed interface Unlock {
  * older key sealed under the current one, so lines written before a passphrase change still open.
  * It holds no key in the clear: without the passphrase it opens nothing.
  *
- * A key is never thrown away. When two key files clash, the one with the lower key id becomes the folder's
- * key and the other moves to `keys/retired/<keyId>.json` (SPEC:R16, conflict copies are merged, then
- * deleted). A retired key made with the same passphrase joins the chain at the next [unlock]; one made
- * with another passphrase waits until [fold] is given that passphrase.
+ * A key is never thrown away. When key files clash, the one with the lowest key id becomes the folder's
+ * key, and every other variant is kept in `keys/retired/<keyId>-<digest>.json` (SPEC:R16, conflict copies
+ * are merged, then deleted); a file this format cannot read is kept in `keys/unreadable/`. A retired key
+ * made with the same passphrase opens with the next [unlock], in memory, and is written into the chain at
+ * the next [change] or [fold]; one made with another passphrase waits until [fold] is given that passphrase.
+ *
+ * Trust: anyone who can write the sync folder can plant files here. They cannot read anything, and an
+ * unlock derives at most [MAX_RETIRED_TRIES] retired files, so planted files can slow an unlock but not
+ * stop it; [fold], which the person starts, tries every retired file.
  *
  * The caller owns the passphrase arrays and should clear them after use.
  */
@@ -72,8 +82,9 @@ class KeyFolder internal constructor(
         val info = parse(bytes) ?: return Unlock.Damaged
         val key = KeyDerivation.derive(passphrase, info.salt, info.iterations)
         if (!checks(info, key)) return Unlock.WrongPassphrase
-        val chain = chainOf(info, key) ?: return Unlock.Damaged
-        return Unlock.Unlocked(LineCipher(retiredOpenedBy(passphrase, chain) + chain, info.keyId))
+        val (chain, unreadable) = chainOf(info, key)
+        val all = retiredOpenedBy(passphrase, chain, MAX_RETIRED_TRIES) + chain
+        return Unlock.Unlocked(LineCipher(all, info.keyId), unreadable.filter { it !in all }.sorted())
     }
 
     /**
@@ -95,36 +106,45 @@ class KeyFolder internal constructor(
     /**
      * Two devices that started offline each made a key file (or changed the passphrase apart), and Syncthing
      * renamed one of them `keyinfo.sync-conflict-*.json`. The file with the lowest key id stays the folder's
-     * key, holding the union of every same-id copy's chain (each entry is sealed under that one key, so no
-     * passphrase is needed). Every other key file moves to `keys/retired/`, and a copy no build of this
-     * version can read moves to `keys/unreadable/`. Nothing is deleted that is not kept somewhere. True when
-     * the file this device had read lost: it must then unlock again.
+     * key. Copies with that same id and the same salt, rounds and check value add the chain entries the
+     * folder's file lacks (each entry is sealed under that one key, so no passphrase is needed); where both
+     * hold an entry, the folder's file wins. Every variant that differs from the result is kept in
+     * `keys/retired/`, and a file this format cannot read in `keys/unreadable/`, before any copy is deleted.
+     * True when the file this device had read lost: it must then unlock again.
      */
     fun settleConflicts(): Boolean {
         val copies = files.list(DIR).filter { it.startsWith("keyinfo") && ".sync-conflict-" in it }
         if (copies.isEmpty()) return false
         val main = files.read(PATH)
         val all = listOfNotNull(main?.let { "keyinfo.json" to it }) + copies.mapNotNull { name -> files.read("$DIR/$name")?.let { name to it } }
-        val readable = all.mapNotNull { (_, bytes) -> parse(bytes)?.let { it to bytes } }
+        val readable = all.mapNotNull { (_, bytes) -> parse(bytes)?.let { it to bytes } } // the folder's own file first
         val winnerId = readable.minOfOrNull { it.first.keyId } ?: return false // nothing readable: leave every file as it is
-        all.filter { parse(it.second) == null }.forEach { (name, bytes) -> files.replace("$UNREADABLE/$name", bytes) }
-        readable.filter { it.first.keyId != winnerId }.forEach { (info, bytes) -> files.replace(retiredPath(info.keyId, bytes), bytes) }
-        val same = readable.filter { it.first.keyId == winnerId }.map { it.first }
-        val merged = same.first().let { Info(it.keyId, it.salt, it.iterations, it.check, same.fold(emptyMap()) { o, i -> o + i.older }) }
+        all.filter { parse(it.second) == null }.forEach { (name, bytes) -> files.replace("$UNREADABLE/$name-${digest(bytes)}", bytes) }
+        val base = readable.first { it.first.keyId == winnerId }.first
+        val mergeable = readable.map { it.first }.filter { it.keyId == winnerId && it.salt.contentEquals(base.salt) && it.iterations == base.iterations && it.check.contentEquals(base.check) }
+        val older = mergeable.fold(emptyMap<String, String>()) { o, i -> o + i.older.filterKeys { it !in o } }
+        val merged = encode(Info(base.keyId, base.salt, base.iterations, base.check, older))
+        readable.filter { !it.second.contentEquals(merged) }.forEach { (info, bytes) -> files.replace(retiredPath(info.keyId, bytes), bytes) }
         val lost = main == null || parse(main)?.keyId != winnerId
-        files.replace(PATH, encode(merged))
+        files.replace(PATH, merged)
         copies.forEach { files.delete("$DIR/$it") }
         return lost
     }
 
-    /** The ids of retired keys that [passphrase]'s chain does not yet hold: what still waits for [fold]. Never throws on a bad file. */
+    /** The ids of retired keys that [passphrase]'s chain does not yet cover: what still waits for [fold]. Never throws on a bad file. */
     fun unfoldedKeyIds(passphrase: CharArray): List<String> {
         val info = files.read(PATH)?.let(::parse) ?: return emptyList()
         val key = KeyDerivation.derive(passphrase, info.salt, info.iterations)
-        val chain = (if (checks(info, key)) chainOf(info, key) else null) ?: return emptyList()
-        val known = chain.keys + retiredOpenedBy(passphrase, chain).keys
-        return retired().map { it.keyId }.filter { it !in known }.distinct().sorted()
+        if (!checks(info, key)) return emptyList()
+        val chain = chainOf(info, key).first
+        val known = chain + retiredOpenedBy(passphrase, chain, Int.MAX_VALUE)
+        return retired().filter { !covered(it, known) }.map { it.keyId }.distinct().sorted()
     }
+
+    /** Key files kept aside because this format cannot read them, and retired files that no longer parse: keys that may be missing. */
+    fun unreadableKeyFiles(): List<String> =
+        files.list(UNREADABLE).map { "$UNREADABLE/$it" } +
+            files.list(RETIRED).filter { name -> files.read("$RETIRED/$name")?.let(::parse) == null }.map { "$RETIRED/$it" }
 
     /**
      * Folds the retired keys that [retiredPassphrase] opens into the chain of the folder's key, which
@@ -136,8 +156,8 @@ class KeyFolder internal constructor(
         val info = parse(bytes) ?: throw IllegalStateException("The key file is damaged")
         val key = KeyDerivation.derive(passphrase, info.salt, info.iterations)
         require(checks(info, key)) { "Wrong passphrase" }
-        val chain = chainOf(info, key) ?: throw IllegalStateException("The key file is damaged")
-        val added = retiredOpenedBy(retiredPassphrase, chain).filterKeys { it !in chain }
+        val chain = chainOf(info, key).first
+        val added = retiredOpenedBy(retiredPassphrase, chain, Int.MAX_VALUE).filterKeys { it !in chain }
         if (added.isEmpty()) return false
         val sealer = LineCipher(mapOf(info.keyId to key), info.keyId)
         val older = info.older + added.mapValues { sealer.seal(it.value) }
@@ -152,42 +172,46 @@ class KeyFolder internal constructor(
         val sealer = LineCipher(mapOf(keyId to key), keyId)
         val info = Info(keyId, salt, iterations, checkValue(key), previous.filterKeys { it != keyId }.mapValues { sealer.seal(it.value) })
         files.replace(PATH, encode(info))
-        return LineCipher(requireNotNull(chainOf(info, key)), keyId)
+        return LineCipher(chainOf(info, key).first, keyId)
     }
 
     private fun checks(info: Info, key: ByteArray) = constantTimeEquals(checkValue(key), info.check)
 
-    /** Every key [info] holds, by id, once [key] is known to be its key; null when an older entry fails to open. */
-    private fun chainOf(info: Info, key: ByteArray): Map<String, ByteArray>? {
+    /** Every key [info] holds that opens, by id, once [key] is known to be its key, and the ids of older entries that did not open. */
+    private fun chainOf(info: Info, key: ByteArray): Pair<Map<String, ByteArray>, List<String>> {
         val current = LineCipher(mapOf(info.keyId to key), info.keyId)
-        val older = info.older.mapValues { (_, sealed) -> current.open(sealed) ?: return null }
-        return older + (info.keyId to key)
+        val opened = info.older.mapValues { (_, sealed) -> current.open(sealed) }
+        val older = opened.filterValues { it != null }.mapValues { it.value!! }
+        return (older + (info.keyId to key)) to opened.filterValues { it == null }.keys.toList()
     }
 
     /** Every readable retired key file, Syncthing's copies of them included. */
     private fun retired(): List<Info> =
         files.list(RETIRED).filter { it.endsWith(".json") }.mapNotNull { name -> files.read("$RETIRED/$name")?.let(::parse) }
 
+    /** True when [known] already holds [r]'s key and every key in its chain, so opening [r] would add nothing. */
+    private fun covered(r: Info, known: Map<String, ByteArray>) = r.keyId in known && known.keys.containsAll(r.older.keys)
+
     /**
-     * The keys of the retired files [passphrase] opens. A file whose key and whole chain [known] already
-     * holds costs nothing; at most [MAX_RETIRED_TRIES] others are derived, lowest id first, so planted files
-     * cannot stall an unlock.
+     * The keys of the retired files [passphrase] opens. A file [known] already covers costs nothing; at
+     * most [limit] others are derived, lowest id first.
      */
-    private fun retiredOpenedBy(passphrase: CharArray, known: Map<String, ByteArray>): Map<String, ByteArray> =
+    private fun retiredOpenedBy(passphrase: CharArray, known: Map<String, ByteArray>, limit: Int): Map<String, ByteArray> =
         retired()
-            .filter { r -> r.keyId !in known || !known.keys.containsAll(r.older.keys) }
-            .distinctBy { it.keyId to it.older.keys }
+            .filter { !covered(it, known) }
+            .distinctBy { Triple(it.keyId, it.older.keys, digest(it.salt)) }
             .sortedBy { it.keyId }
-            .take(MAX_RETIRED_TRIES)
+            .take(limit)
             .mapNotNull { r ->
                 val key = KeyDerivation.derive(passphrase, r.salt, r.iterations)
-                if (checks(r, key)) chainOf(r, key) else null
+                if (checks(r, key)) chainOf(r, key).first else null
             }
             .fold(emptyMap()) { all, keys -> all + keys }
 
     /** A retired file's name carries a digest of its bytes too, so two different files for one key id never overwrite each other. */
-    private fun retiredPath(keyId: String, bytes: ByteArray): String =
-        "$RETIRED/$keyId-" + sha256(bytes).take(4).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') } + ".json"
+    private fun retiredPath(keyId: String, bytes: ByteArray): String = "$RETIRED/$keyId-${digest(bytes)}.json"
+
+    private fun digest(bytes: ByteArray) = sha256(bytes).take(4).joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 
     private fun checkValue(key: ByteArray) = hmacSha256(key, CHECK_LABEL.encodeToByteArray())
 
