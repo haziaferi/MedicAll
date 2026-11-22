@@ -16,7 +16,8 @@ import com.hazia.medicall.data.sync.saveClock
 internal class LocalWrites(private val db: MedicAllDatabase, val clock: HybridClock) {
     val merger = Merger(clock, ASK_GROUPS, KEEP_LOSER_GROUPS)
     private val sync = db.syncDao()
-    private val tables = db.syncedTables()
+    /** The synced tables, as the merge sees them; a restore checks a backup's rows against them. */
+    val tables = db.syncedTables()
 
     /** Writes the rows [ids] names, table by table, as [block] changes them. */
     suspend fun write(ids: Map<String, List<String>>, block: (StagedStore) -> Unit) = write({ ids }) { store, _ -> block(store) }

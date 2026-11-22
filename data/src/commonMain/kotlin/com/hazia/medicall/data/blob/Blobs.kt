@@ -32,8 +32,7 @@ class Blobs internal constructor(
      * exist is refused by the reference's foreign key (SPEC:R15) when the write commits.
      */
     suspend fun add(profileId: String, name: String, mime: String, bytes: ByteArray): String {
-        val hash = sha256Hex(bytes)
-        if (verified(store, cipher, hash) == null) store.write(hash, cipher.seal(bytes).encodeToByteArray())
+        val hash = storeBytes(bytes)
         val id = Ids.new()
         writes.write(mapOf(BLOB_REF to listOf(id))) { staged ->
             val s = writes.clock.tick()
@@ -43,6 +42,17 @@ class Blobs internal constructor(
             )))
         }
         return id
+    }
+
+    /**
+     * Stores [bytes] by their hash, which it returns, with no file reference: a restore re-adding a
+     * file a merged reference names (SPEC:R22), or a repair (SPEC:R23). A copy here that is damaged is
+     * replaced; an intact one is left as it is.
+     */
+    internal fun storeBytes(bytes: ByteArray): String {
+        val hash = sha256Hex(bytes)
+        if (verified(store, cipher, hash) == null) store.write(hash, cipher.seal(bytes).encodeToByteArray())
+        return hash
     }
 
     /**
