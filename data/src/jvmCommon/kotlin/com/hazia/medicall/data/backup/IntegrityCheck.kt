@@ -12,7 +12,9 @@ import java.io.IOException
  * though this device held it, [repaired] those restored from a backup, [unrepaired] those no
  * reachable backup holds intact: what the "Backup check failed" notification of SPEC:R73 reports
  * (phase 7). [notYetArrived] are files a reference names that this device never held: on their way
- * from the device that added them, neither damaged nor counted in [checked].
+ * from the device that added them, neither damaged nor counted in [checked]. [tooLarge] are the
+ * [unrepaired] files a backup does hold, in an entry larger than this device's reader takes
+ * ([SevenZipArchives]' cap, a quarter of the heap).
  */
 data class IntegrityReport(
     val checked: Int,
@@ -20,6 +22,7 @@ data class IntegrityReport(
     val repaired: List<String>,
     val unrepaired: List<String>,
     val notYetArrived: List<String> = emptyList(),
+    val tooLarge: List<String> = emptyList(),
 )
 
 /**
@@ -52,20 +55,28 @@ class IntegrityCheck(
         val damaged = (names - notYetArrived.toSet()).filter { blobs.intact(it) == null }
         val wanted = damaged.toMutableSet()
         val repaired = mutableSetOf<String>()
+        val tooLarge = mutableSetOf<String>()
         if (wanted.isNotEmpty() && target.reachable()) {
             for (backup in BackupWriter.newestFirst(target.list())) {
                 if (wanted.isEmpty()) break
-                val found = repairFrom(backup, password, wanted)
+                val found = repairFrom(backup, password, wanted, tooLarge)
                 wanted -= found
                 repaired += found
             }
         }
         blobs.markHeld(repaired)
-        return IntegrityReport(names.size - notYetArrived.size, damaged, damaged.filter { it in repaired }, damaged.filter { it in wanted }, notYetArrived)
+        val unrepaired = damaged.filter { it in wanted }
+        return IntegrityReport(
+            names.size - notYetArrived.size, damaged, damaged.filter { it in repaired }, unrepaired, notYetArrived,
+            tooLarge = unrepaired.filter { it in tooLarge },
+        )
     }
 
-    /** The files of [wanted] stored again from [backup], read in one pass; none when it cannot be read or does not open. */
-    private fun repairFrom(backup: String, password: CharArray, wanted: Set<String>): Set<String> {
+    /**
+     * The files of [wanted] stored again from [backup], read in one pass; none when it cannot be read or
+     * does not open. A wanted entry over the reader's cap is added to [tooLarge].
+     */
+    private fun repairFrom(backup: String, password: CharArray, wanted: Set<String>, tooLarge: MutableSet<String>): Set<String> {
         val found = mutableSetOf<String>()
         val file = File.createTempFile(TEMP_PREFIX, ".7z", workDir)
         try {
@@ -79,7 +90,14 @@ class IntegrityCheck(
                 }
                 val hash = index?.get(entry.name) ?: return@readEach
                 if (hash !in wanted || hash in found) return@readEach
-                val plain = entry.bytesOrNull() ?: return@readEach
+                val plain = try {
+                    entry.open().use { it.readBytes() }
+                } catch (_: EntryTooLargeException) {
+                    tooLarge += hash
+                    return@readEach
+                } catch (_: IOException) {
+                    return@readEach
+                }
                 if (sha256Hex(plain) != hash) return@readEach
                 blobs.storeBytes(plain)
                 found += hash

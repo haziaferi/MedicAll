@@ -137,6 +137,26 @@ class BackupRestoreTest {
         assertEquals(setOf("A-0"), b.rows().keys)
     }
 
+    /** A file larger than this reader's entry cap is named in the report, not lost among the skipped (N2). */
+    @Test
+    fun entryOverTheCapIsNamed_N2() {
+        val w = world()
+        val a = w.Device("A")
+        val profile = a.create("Profile A")
+        runBlocking {
+            a.blobs.add(profile, "Scan.bin", "application/octet-stream", ByteArray(20_000) { (it % 251).toByte() })
+            a.blobs.add(profile, "Note.txt", "text/plain", note)
+        }
+        val archive = backup(a)
+
+        val b = w.Device("B")
+        val report = assertNotNull(runBlocking { BackupRestore(b.writes, b.blobs, SevenZipArchives(maxEntryBytes = 10_000), wallMillis = { w.syncthing.now }).restore(archive, password) })
+
+        assertEquals(1, report.files)
+        assertEquals(0, report.skipped, "the entry over the cap is counted among the skipped")
+        assertEquals(listOf("files/Profile A/2026-11-20 Scan.bin"), report.tooLarge)
+    }
+
     @Test
     fun reAddingByHashMakesNoSecondReference() {
         val w = world()

@@ -27,12 +27,15 @@ interface BackupTarget {
      * Writes [source]'s bytes as [name], whole or not at all:
      * 1. to a temporary name, forced to the device (fsync);
      * 2. read back, its streamed SHA-256 compared with [source]'s;
-     * 3. the previous [name], if there is one, kept as `<name>.prev` ([prev]);
+     * 3. the previous [name], if there is one, kept as `<name>.prev` ([prev]) when no `.prev` exists;
+     *    an existing `.prev` is never overwritten, and the previous [name] waits under a temporary
+     *    name instead, deleted once the new one is in place;
      * 4. moved over [name], and read back and compared again.
      *
-     * Then `<name>.prev` goes, unless [keepPrevious]. A failure at any step throws, and leaves the
-     * previous [name] as it was; a write interrupted between steps 3 and 4 leaves it as `<name>.prev`.
-     * So the old copy or the new one is always there, never neither.
+     * Then `<name>.prev` goes, unless [keepPrevious]: the caller keeps it until a write whose backup
+     * is complete. A failure at any step throws, and leaves the previous [name] as it was (with none,
+     * no bad [name] is left); a write interrupted between steps 3 and 4 leaves the old copy as
+     * `<name>.prev`, or beside a kept `.prev`. So an old copy or the new one is always there.
      */
     fun write(name: String, source: File, keepPrevious: Boolean = false)
 
@@ -76,24 +79,25 @@ class DirectoryBackupTarget internal constructor(private val root: Path, private
         val prev = file(BackupTarget.prev(name))
         val tmp = root.resolve(TEMP_PREFIX + name)
         val hash = sha256Hex(source)
+        // A kept .prev is never overwritten: the old target then waits under a temporary name instead.
+        val aside = if (prev.exists()) root.resolve(TEMP_PREFIX + name + ".old") else prev
         try {
             disk.copy(source, tmp)
             if (sha256Hex(tmp.toFile()) != hash) throw IOException(NOT_KEPT)
             val hadOld = target.exists()
-            if (hadOld) disk.move(target, prev)
+            if (hadOld) disk.move(target, aside)
             try {
                 disk.move(tmp, target)
                 if (sha256Hex(target.toFile()) != hash) throw IOException(NOT_KEPT)
             } catch (e: IOException) {
-                if (hadOld) {
-                    try {
-                        disk.move(prev, target)
-                    } catch (again: IOException) {
-                        e.addSuppressed(again)
-                    }
+                try {
+                    if (hadOld) disk.move(aside, target) else Files.deleteIfExists(target)
+                } catch (again: IOException) {
+                    e.addSuppressed(again)
                 }
                 throw e
             }
+            if (aside != prev) Files.deleteIfExists(aside)
             if (!keepPrevious) Files.deleteIfExists(prev)
         } finally {
             Files.deleteIfExists(tmp)

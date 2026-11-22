@@ -6,7 +6,6 @@ import com.hazia.medicall.data.MAIN
 import com.hazia.medicall.data.MedicAllDatabase
 import com.hazia.medicall.data.NAME
 import com.hazia.medicall.data.PROFILE
-import com.hazia.medicall.data.REMOVED
 import com.hazia.medicall.data.blob.BlobName
 import com.hazia.medicall.data.blob.Blobs
 import com.hazia.medicall.data.sync.RecordCodec
@@ -44,10 +43,8 @@ import java.time.ZoneId
 internal class BackupContent private constructor(
     val entries: List<ArchiveEntry>,
     val files: Int,
-    /** The hashes, each once, of the files references name that this backup does not hold. */
+    /** The hashes, each once, of the files references name, the bin's included, that this backup does not hold. */
     val missing: List<String>,
-    /** Whether a file a live reference (not one in the bin) names is among [missing]. */
-    val missingLive: Boolean,
 ) {
 
     companion object {
@@ -77,10 +74,7 @@ internal class BackupContent private constructor(
             }
             val included = files.map { it.hash }.toSet()
             val named = refs.map { it.groups.getValue(MAIN).values["sha256"] as String }.filter(BlobName::isValid)
-            val live = refs.filter { it.groups[REMOVED]?.values?.get("removed_at") == null }
-                .map { it.groups.getValue(MAIN).values["sha256"] as String }.filter(BlobName::isValid)
-            val missing = named.distinct().filter { it !in included }
-            return BackupContent(entries, files.size, missing, live.any { it !in included })
+            return BackupContent(entries, files.size, named.distinct().filter { it !in included })
         }
 
         /** The files a backup holds, read from `records/files.csv`: entry path to SHA-256. */

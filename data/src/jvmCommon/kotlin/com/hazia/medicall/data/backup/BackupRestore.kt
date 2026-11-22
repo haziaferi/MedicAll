@@ -9,15 +9,17 @@ import com.hazia.medicall.data.sync.RecordCodec
 import com.hazia.medicall.data.sync.RowRecord
 import com.hazia.medicall.data.sync.RowTable
 import java.io.File
+import java.io.IOException
 
 /**
  * What one restore did: [rows] the backup's rows merged, [files] its files stored here, [skipped] what
  * it could not take: a records line that does not read or a row its table refuses (a file reference
- * whose profile was purged here, say), and a file whose entry does not read back intact or declares
- * more bytes than the reader takes. [ahead] are rows stamped more than a day past this device's clock
- * ([LineGuard]), refused so they cannot push its clock into the future.
+ * whose profile was purged here, say), and a file whose entry does not read back intact. [ahead] are
+ * rows stamped more than a day past this device's clock ([LineGuard]), refused so they cannot push its
+ * clock into the future. [tooLarge] names the file entries that declare more bytes than this device's
+ * reader takes ([SevenZipArchives]' cap, a quarter of the heap): intact in the backup, not restored here.
  */
-data class RestoreReport(val rows: Int, val files: Int, val skipped: Int, val ahead: Int = 0)
+data class RestoreReport(val rows: Int, val files: Int, val skipped: Int, val ahead: Int = 0, val tooLarge: List<String> = emptyList())
 
 /**
  * Restores a backup written by [BackupWriter] (SPEC:R22). Every row of `records/records.json` goes
@@ -47,20 +49,32 @@ class BackupRestore internal constructor(
         var files = 0
         var skipped = 0
         val stored = mutableListOf<String>()
+        val tooLarge = mutableListOf<String>()
         // Files first, so a reference merged below finds its file here.
         val opened = reader.readEach(archive, password) { entry ->
             when {
                 entry.name == BackupContent.RECORDS -> records = entry.bytesOrNull()
                 !entry.name.startsWith(BackupContent.FILES) -> {}
-                else -> when (val bytes = entry.bytesOrNull()) {
-                    null -> skipped++
-                    else -> { stored += blobs.storeBytes(bytes); files++ }
+                else -> {
+                    val bytes = try {
+                        entry.open().use { it.readBytes() }
+                    } catch (_: EntryTooLargeException) {
+                        tooLarge += entry.name
+                        null
+                    } catch (_: IOException) {
+                        skipped++
+                        null
+                    }
+                    if (bytes != null) {
+                        stored += blobs.storeBytes(bytes)
+                        files++
+                    }
                 }
             }
         }
         if (!opened) return null
         blobs.markHeld(stored)
-        val lines = records?.decodeToString()?.lines()?.filter { it.isNotEmpty() } ?: return RestoreReport(0, files, skipped + 1)
+        val lines = records?.decodeToString()?.lines()?.filter { it.isNotEmpty() } ?: return RestoreReport(0, files, skipped + 1, tooLarge = tooLarge)
         val wall = wallMillis()
         val rows = mutableListOf<Row>()
         var ahead = 0
@@ -89,7 +103,7 @@ class BackupRestore internal constructor(
             }
             n
         }
-        return RestoreReport(merged, files, skipped, ahead)
+        return RestoreReport(merged, files, skipped, ahead, tooLarge)
     }
 
     /** One transaction: [rows] merged with their stamps, as an import merges them. */

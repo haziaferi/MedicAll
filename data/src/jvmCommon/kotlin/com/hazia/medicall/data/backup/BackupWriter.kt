@@ -14,9 +14,10 @@ enum class BackupKind { LATEST, WEEKLY }
 sealed interface BackupResult {
     /**
      * [name] was written in the backup folder, holding [files] attachments. [missing] are the hashes,
-     * each once, of the files references name that it does not hold: not arrived here yet, or damaged
-     * past repair. When a live reference's file is among them, the previous LATEST was kept beside it
-     * as `<name>.prev` ([keptPrevious]), so the backup that still held it is not lost.
+     * each once, of the files references name, the bin's included, that it does not hold: not arrived
+     * here yet, or damaged past repair. When any is missing, the previous copy is kept beside it as
+     * `<name>.prev` ([keptPrevious]), and an existing `.prev` is never overwritten, so the backup that
+     * still held the file is not lost; it goes only after a write that misses nothing.
      */
     data class Written(val name: String, val files: Int, val missing: List<String> = emptyList(), val keptPrevious: Boolean = false) : BackupResult
 
@@ -62,7 +63,8 @@ class BackupWriter(
             tmp = File.createTempFile(TEMP_PREFIX, ".7z", workDir)
             writer.write(tmp, password, content.entries)
             if (!readsBackWhole(tmp, password, content.entries.map { it.name })) return BackupResult.Failed("The backup did not read back whole.")
-            val keepPrevious = kind == BackupKind.LATEST && content.missingLive
+            // The bin's files count too (SPEC:R22 backs up everything): any file left out keeps the previous copy.
+            val keepPrevious = content.missing.isNotEmpty()
             target.write(name, tmp, keepPrevious)
             BackupResult.Written(name, content.files, content.missing, keepPrevious && BackupTarget.prev(name) in target.list())
         } catch (e: CancellationException) {

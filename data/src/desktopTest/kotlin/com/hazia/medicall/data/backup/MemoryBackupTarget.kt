@@ -5,7 +5,7 @@ import java.io.IOException
 
 /**
  * A backup folder in memory, keeping [BackupTarget.write]'s contract: the previous copy as `.prev`
- * until the new one is in place, then dropped unless kept. [failWrites] makes every write throw, as a
+ * unless a `.prev` is already kept, which is never overwritten; `.prev` dropped unless kept. [failWrites] makes every write throw, as a
  * full disk or a removed card would.
  */
 internal class MemoryBackupTarget : BackupTarget {
@@ -16,7 +16,8 @@ internal class MemoryBackupTarget : BackupTarget {
     override fun write(name: String, source: File, keepPrevious: Boolean) {
         if (failWrites) throw IOException("disk full")
         val bytes = source.readBytes()
-        files[name]?.let { files[BackupTarget.prev(name)] = it }
+        // A kept .prev is never overwritten.
+        if (BackupTarget.prev(name) !in files) files[name]?.let { files[BackupTarget.prev(name)] = it }
         files[name] = bytes
         if (!keepPrevious) files.remove(BackupTarget.prev(name))
     }

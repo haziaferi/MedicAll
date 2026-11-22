@@ -293,6 +293,73 @@ class BackupWriterTest {
     }
 
     @Test
+    fun keptPreviousSurvivesTwoIncompleteWrites_N1() {
+        val a = device()
+        val profile = a.create("Profile A")
+        runBlocking { a.blobs.add(profile, "Lab 1.pdf", "application/pdf", lab1) }
+        val folder = tmp.newFolder("backups").toPath()
+        val target = DirectoryBackupTarget(folder)
+        assertIs<BackupResult.Written>(runBlocking { writer(a, target).write(BackupKind.LATEST, password) })
+        val complete = folder.resolve(BackupWriter.LATEST_NAME).toFile().readBytes()
+        a.addBlobRef(profile)
+
+        // Two hourly writes in a row, each missing the same live file.
+        assertIs<BackupResult.Written>(runBlocking { writer(a, target).write(BackupKind.LATEST, password) })
+        a.create("Profile B")
+        assertIs<BackupResult.Written>(runBlocking { writer(a, target).write(BackupKind.LATEST, password) })
+
+        assertContentEquals(complete, folder.resolve(BackupTarget.prev(BackupWriter.LATEST_NAME)).toFile().readBytes())
+        assertEquals(listOf(BackupWriter.LATEST_NAME, BackupTarget.prev(BackupWriter.LATEST_NAME)), target.list().sorted())
+
+        // A complete write drops it.
+        runBlocking { a.db.blobRefDao().deleteBlobRefs(a.blobRefs().filterValues { it.groups.getValue("main").values["sha256"] == "ab".repeat(32) }.keys.toList()) }
+        assertEquals(BackupResult.Written(BackupWriter.LATEST_NAME, files = 1), runBlocking { writer(a, target).write(BackupKind.LATEST, password) })
+        assertEquals(listOf(BackupWriter.LATEST_NAME), target.list())
+    }
+
+    @Test
+    fun crashThenFailedCheckThenWriteKeepsThePrevious_N3() {
+        val a = device()
+        val profile = a.create("Profile A")
+        val folder = tmp.newFolder("backups").toPath()
+        assertIs<BackupResult.Written>(runBlocking { writer(a, DirectoryBackupTarget(folder)).write(BackupKind.LATEST, password) })
+        val intact = folder.resolve(BackupWriter.LATEST_NAME).toFile().readBytes()
+        a.create("Profile B")
+
+        // 1. A crash leaves .prev intact and no LATEST.
+        assertFailsWith<Crash> { runBlocking { writer(a, DirectoryBackupTarget(folder, CrashingDisk(BackupWriter.LATEST_NAME))).write(BackupKind.LATEST, password) } }
+        // 2. The next write fails its check after the move, with no old LATEST to put back.
+        assertIs<BackupResult.Failed>(runBlocking { writer(a, DirectoryBackupTarget(folder, CorruptingAfterMoveDisk(BackupWriter.LATEST_NAME))).write(BackupKind.LATEST, password) })
+        // With no old LATEST to put back, the bad one is not left either.
+        assertEquals(listOf(BackupTarget.prev(BackupWriter.LATEST_NAME)), DirectoryBackupTarget(folder).list())
+        // 3. The write after that, missing a file, must not move what step 2 left over the intact .prev.
+        a.addBlobRef(profile)
+        assertIs<BackupResult.Written>(runBlocking { writer(a, DirectoryBackupTarget(folder)).write(BackupKind.LATEST, password) })
+
+        assertContentEquals(intact, folder.resolve(BackupTarget.prev(BackupWriter.LATEST_NAME)).toFile().readBytes())
+    }
+
+    @Test
+    fun missingFileInTheBinKeepsThePrevious_N4() {
+        val a = device()
+        val profile = a.create("Profile A")
+        runBlocking { a.blobs.add(profile, "Lab 1.pdf", "application/pdf", lab1) }
+        val folder = tmp.newFolder("backups").toPath()
+        val target = DirectoryBackupTarget(folder)
+        assertIs<BackupResult.Written>(runBlocking { writer(a, target).write(BackupKind.LATEST, password) })
+        val complete = folder.resolve(BackupWriter.LATEST_NAME).toFile().readBytes()
+        // A reference in the bin whose file has not arrived here.
+        val ref = runBlocking { a.db.blobRefDao().allBlobRefs() }.single()
+        val binned = "cd".repeat(32)
+        runBlocking { a.db.blobRefDao().putBlobRefs(listOf(ref.copy(id = "binned", sha256 = binned, removedAt = start))) }
+
+        val result = runBlocking { writer(a, target).write(BackupKind.LATEST, password) }
+
+        assertEquals(BackupResult.Written(BackupWriter.LATEST_NAME, files = 1, missing = listOf(binned), keptPrevious = true), result)
+        assertContentEquals(complete, folder.resolve(BackupTarget.prev(BackupWriter.LATEST_NAME)).toFile().readBytes())
+    }
+
+    @Test
     fun ioFailureOnTheMovePutsThePreviousBack_H2() {
         val a = device()
         a.create("Profile A")

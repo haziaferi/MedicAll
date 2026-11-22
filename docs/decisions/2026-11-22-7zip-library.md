@@ -107,6 +107,21 @@ password lists both names.
   names optional libraries (Brotli, Zstandard, ASM, OSGi) that are absent: a minified build will need
   `-dontwarn` rules for them, and a check that a backup still writes and reads.
 - **The reader's interface** gains `readEach`, every entry in one opening of the archive (section 5).
+- **The entry cap is the reading device's (2026-11-23, review finding N2), a known limit.** The reader
+  refuses an entry whose declared size passes a quarter of its own heap, before reading it: a restore
+  or a repair holds one entry whole, and `Blobs.storeBytes` holds about 2 to 3 times an entry at once
+  (the plain bytes, the sealed text and its UTF-8 bytes). So a file added on the desktop can be over a
+  phone's cap. Such an entry is intact in the backup, and is not restored or repaired from on that
+  device: `RestoreReport.tooLarge` names the entries, `IntegrityReport.tooLarge` the unrepaired hashes.
+  No size limit is set on adding a file; that is an owner choice for later.
+- **`blob_held` changed schema version 1 in place (2026-11-23, review finding N5).** Version 1 has not
+  shipped, so no migration was written, but the schema's identity hash changed: any debug install made
+  before commit `dedc343` must have its app data cleared, or Room refuses to open its database.
+- **`.prev` keeps the backup that still held a file (2026-11-23, review findings N1, N3, N4).** An
+  existing `.prev` is never overwritten: a write then moves the old file aside under a temporary
+  name, puts it back if the new one fails its check, and deletes it once the new one is in place.
+  `.prev` is deleted only after a write that misses no file, the bin's included. A failed check with
+  no old file to put back deletes the bad new one.
 
 ## 5. The interface for Task 12
 
@@ -162,8 +177,9 @@ object SevenZip : SevenZipArchives()
 
 // BackupTarget.kt
 interface BackupTarget {
-    /** Temporary copy, fsync, streamed SHA-256 compared, old copy kept as `<name>.prev`, moved over
-     *  [name], compared again; `.prev` dropped unless [keepPrevious]. Old or new, never neither. */
+    /** Temporary copy, fsync, streamed SHA-256 compared, old copy kept as `<name>.prev` (an existing
+     *  `.prev` is never overwritten), moved over [name], compared again; `.prev` dropped unless
+     *  [keepPrevious], which BackupWriter sets while any file is missing. Old or new, never neither. */
     fun write(name: String, source: java.io.File, keepPrevious: Boolean = false)
     fun openRead(name: String): java.io.InputStream?
     fun list(): List<String>          // `.prev` copies included, temporary ones not
@@ -181,11 +197,13 @@ fun BackupWriter.Companion.newestFirst(names: List<String>): List<String>  // ea
 class BackupRestore internal constructor(writes: LocalWrites, blobs: Blobs,
     reader: ArchiveReader = SevenZip, wallMillis: () -> Long = System::currentTimeMillis)
 suspend fun BackupRestore.restore(archive: java.io.File, password: CharArray): RestoreReport?
-data class RestoreReport(val rows: Int, val files: Int, val skipped: Int, val ahead: Int = 0)
+data class RestoreReport(val rows: Int, val files: Int, val skipped: Int, val ahead: Int = 0,
+                         val tooLarge: List<String> = emptyList())   // N2: entry names over the cap
 
 // IntegrityCheck.kt: constructor unchanged.
 data class IntegrityReport(val checked: Int, val damaged: List<String>, val repaired: List<String>,
-                           val unrepaired: List<String>, val notYetArrived: List<String> = emptyList())
+                           val unrepaired: List<String>, val notYetArrived: List<String> = emptyList(),
+                           val tooLarge: List<String> = emptyList())   // N2: unrepaired, copy over the cap
 
 // blob/: `Blobs.markHeld(names)` and `Blobs.heldOnce()` (internal), over a new local table `blob_held`.
 ```

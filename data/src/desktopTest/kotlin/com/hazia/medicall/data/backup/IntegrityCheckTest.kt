@@ -137,6 +137,28 @@ class IntegrityCheckTest {
         assertEquals(listOf("ab".repeat(32)), lost.notYetArrived)
     }
 
+    /** A damaged file whose backup copy is over this reader's entry cap is unrepaired, and named as too large (N2). */
+    @Test
+    fun copyOverTheCapIsNamed_N2() {
+        val s = setup()
+        val profile = s.a.rows().keys.single()
+        val scan = ByteArray(20_000) { (it % 251).toByte() }
+        runBlocking { s.a.blobs.add(profile, "Scan.bin", "application/octet-stream", scan) }
+        val scanHash = s.a.blobStore.files.keys.single { it != s.hash && it != s.noteHash }
+        val target = MemoryBackupTarget()
+        backup(s.a, target, BackupKind.LATEST, start)
+        s.a.alter(scanHash)
+        s.a.alter(s.hash)
+
+        val report = runBlocking { IntegrityCheck(s.a.blobs, target, SevenZipArchives(maxEntryBytes = 10_000), workDir = tmp.newFolder()).run(password) }
+
+        assertEquals(listOf(s.hash), report.repaired)
+        assertEquals(listOf(scanHash), report.unrepaired)
+        assertEquals(listOf(scanHash), report.tooLarge)
+        // The device whose reader takes it repairs it from the same backup.
+        assertEquals(IntegrityReport(3, listOf(scanHash), listOf(scanHash), emptyList()), check(s.a, target))
+    }
+
     @Test
     fun malformedHashIsPassedOver_L4() {
         val s = setup()
