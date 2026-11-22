@@ -53,6 +53,13 @@ internal interface BlobRefDao {
     @Query("SELECT * FROM blob_ref ORDER BY id")
     suspend fun allBlobRefs(): List<BlobRefEntity>
 
+    @Query("SELECT * FROM blob_ref WHERE profile_id = :profile ORDER BY id")
+    suspend fun blobRefsOf(profile: String): List<BlobRefEntity>
+
+    /** What is in the bin (SPEC:R18). */
+    @Query("SELECT * FROM blob_ref WHERE removed_at IS NOT NULL ORDER BY removed_at, id")
+    suspend fun removedBlobRefs(): List<BlobRefEntity>
+
     @Upsert
     suspend fun putBlobRefs(rows: List<BlobRefEntity>)
 

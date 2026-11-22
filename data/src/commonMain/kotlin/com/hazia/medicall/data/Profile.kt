@@ -47,6 +47,10 @@ internal interface ProfileDao {
     @Query("SELECT * FROM profile ORDER BY id")
     suspend fun allProfiles(): List<ProfileEntity>
 
+    /** What is in the bin (SPEC:R18). */
+    @Query("SELECT * FROM profile WHERE removed_at IS NOT NULL ORDER BY removed_at, id")
+    suspend fun removedProfiles(): List<ProfileEntity>
+
     @Upsert
     suspend fun putProfiles(rows: List<ProfileEntity>)
 
