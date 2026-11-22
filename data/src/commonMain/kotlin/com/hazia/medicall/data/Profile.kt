@@ -11,7 +11,8 @@ import com.hazia.medicall.core.sync.Row
 import com.hazia.medicall.core.sync.Stamp
 import com.hazia.medicall.data.sync.EntityTable
 
-internal const val PROFILE = "profile"
+/** The profile table's name: what [com.hazia.medicall.data.bin.BinEntry.table] holds for a profile. */
+const val PROFILE = "profile"
 
 /*
  * A profile's field groups (SPEC:R15, SPEC:R16), one per thing changed apart, so a rename on one

@@ -20,11 +20,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * What one import did: rows and purges it changed, and folder lines it skipped: unreadable (one
- * that does not open with any known key included, SPEC:R16), for a table this version lacks (read
- * again once the synced tables change), refused by a table's rules, or naming a purged parent.
- * [waiting] counts lines set aside as stamped too far ahead ([LineGuard]); they are read again on
- * the next import.
+ * What one import did: rows and purges it changed, and folder lines it skipped: unreadable (altered
+ * or not sealed, SPEC:R16), for a table this version lacks (read again once the synced tables
+ * change), refused by a table's rules, or naming a purged parent. [waiting] counts lines set aside:
+ * stamped too far ahead ([LineGuard]), or sealed under a key this device does not hold yet. They
+ * are read again on the next import, and a conflict copy holding one is kept until then.
  */
 data class ImportReport(val changed: Int, val skipped: Int, val waiting: Int = 0)
 
@@ -81,7 +81,10 @@ internal class FolderSync(
         if (undidPurge) {
             dao.clearReads()
             readOwn = true
-            report += readFiles()
+            // The second pass reads every line again: what it skipped or set aside is the import's
+            // count, not an addition to the first pass's.
+            val again = readFiles()
+            report = ImportReport(report.changed + again.changed, again.skipped, again.waiting)
         }
         (report + retryWaiting()).also { afterImport() }
     }
@@ -104,8 +107,8 @@ internal class FolderSync(
                 if (copy || (data && shared)) {
                     val merged = merge(completeLines(folder.read(path) ?: continue, 0), path = null, from = 0)
                     report += merged
-                    // A copy holding a line set aside as too far ahead is kept, and read whole again
-                    // next time, until that line applies.
+                    // A copy holding a line set aside (too far ahead, or under a key not held yet) is
+                    // kept, and read whole again next time, until that line applies.
                     if (copy && merged.waiting == 0) folder.delete(path)
                 } else if (data && (owner != device || readOwn)) {
                     present += path
@@ -139,10 +142,12 @@ internal class FolderSync(
      * Sync gives no order between files, so a line can name a parent that is not here yet: it
      * waits for it ([retryWaiting]). One whose parent was purged will never apply, and is dropped.
      *
-     * Each line is opened with [cipher] first; one that does not open is skipped. A record stamped
-     * too far ahead ([LineGuard]) is not applied, and the read position of [path] stays just before
-     * the first such line, [from] being where this read started: the next import reads it again,
-     * with the lines after it, which the merge takes without change.
+     * Each line is opened with [cipher] first; one that does not open is skipped, unless it is
+     * sealed under a key [cipher] does not hold yet (a peer's new key that has not reached this
+     * device, or a retired one not folded in yet). That line, and a record stamped too far ahead
+     * ([LineGuard]), is held: not applied, and the read position of [path] stays just before the
+     * first held line, [from] being where this read started. The next import reads it again, with
+     * the lines after it, which the merge takes without change.
      */
     private suspend fun merge(lines: List<Line>, path: String?, from: Int): ImportReport {
         var report = ImportReport(0, 0)
@@ -151,17 +156,20 @@ internal class FolderSync(
         var heldAt: Int? = null
         for (chunk in lines.chunked(MERGE_LINES)) {
             val readable = mutableListOf<Pair<String, Record>>()
-            var ahead = 0
+            var heldLines = 0
             for (line in chunk) {
                 val text = cipher.open(line.text)?.decodeToString()
                 val record = text?.let(::readable)
-                if (text != null && record != null) {
-                    if (LineGuard.isAhead(record, wall)) {
-                        ahead++
-                        if (heldAt == null) heldAt = lineStart
-                    } else {
-                        readable += text to record
-                    }
+                val hold = when {
+                    text == null -> cipher.keyIdOf(line.text)?.let { !cipher.knows(it) } == true
+                    record == null -> false
+                    else -> LineGuard.isAhead(record, wall)
+                }
+                if (hold) {
+                    heldLines++
+                    if (heldAt == null) heldAt = lineStart
+                } else if (text != null && record != null) {
+                    readable += text to record
                 }
                 lineStart = line.end
             }
@@ -182,7 +190,7 @@ internal class FolderSync(
                 dropped += again.dropped.size + again.ready.size
                 applied + apply(emptyList(), position, waiting = sorted.waiting + again.waiting)
             }
-            report += ImportReport(changed, chunk.size - readable.size - ahead + dropped, ahead)
+            report += ImportReport(changed, chunk.size - readable.size - heldLines + dropped, heldLines)
         }
         return report
     }

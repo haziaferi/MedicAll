@@ -9,12 +9,11 @@ import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import java.io.File
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/** Version 1 of the database: its tables' keys, its safe open, and the schema file Room exports. */
+/** Version 1 of the database: its tables' keys and the schema file Room exports (its safe open: [BundledDriverCorruptionTest]). */
 class DatabaseTest {
 
     @get:Rule val tmp = TemporaryFolder()
@@ -49,20 +48,6 @@ class DatabaseTest {
         } finally {
             db.close()
         }
-    }
-
-    /** Ported from Factotum's `BundledDriverCorruptionTest.aCorruptFileIsSetAsideWithItsBytesIntact`. */
-    @Test
-    fun unopenableFileIsSetAsideNotDeleted() {
-        val garbage = "this is not a database\n".toByteArray()
-        val file = tmp.newFile(DATABASE_NAME).apply { writeBytes(garbage) }
-
-        val open = openMedicAllDatabase(file, now = { 7 })
-        open.database.close()
-
-        assertTrue(open.recovered)
-        assertContentEquals(garbage, File(file.path + UNOPENABLE_SUFFIX + 7).readBytes())
-        assertTrue(file.exists())
     }
 
     @Test

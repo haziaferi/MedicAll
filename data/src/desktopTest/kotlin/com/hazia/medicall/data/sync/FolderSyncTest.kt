@@ -1,5 +1,6 @@
 package com.hazia.medicall.data.sync
 
+import androidx.sqlite.SQLiteException
 import com.hazia.medicall.core.sync.Group
 import com.hazia.medicall.core.sync.Row
 import com.hazia.medicall.core.sync.Stamp
@@ -345,6 +346,60 @@ class FolderSyncTest {
         b.import()
 
         assertEquals(1, runBlocking { b.db.syncDao().waiting() }.size)
+    }
+
+    /** An undone purge reads every file again; the second pass's skipped and waiting lines are not added to the first's. */
+    @Test
+    fun anUndonePurgeCountsEachSkippedLineOnce() {
+        val w = world()
+        val a = w.Device("A")
+        val b = w.Device("B")
+        val row = a.create()
+        a.export()
+        w.syncthing.session("A", "B")
+        b.import()
+
+        w.syncthing.now = 10
+        a.purge(row)
+        a.export()
+        // B edits the row after the purge, so B takes the purge back when it arrives (ADR 01).
+        w.syncthing.now = 20
+        b.edit(row, NAME)
+        w.syncthing.session("A", "B")
+        w.syncthing.folder("B").replace(FolderLayout.segment("X", 0), w.sealed("{not json").encodeToByteArray())
+
+        val report = b.import()
+
+        assertNotNull(b.rows()[row], "the edit after the purge keeps the row")
+        assertEquals(1, report.skipped, "one unreadable line in the folder")
+        assertEquals(0, report.waiting)
+    }
+
+    /** The constraint backstop: a chunk the database refuses is applied line by line, and the refused line is dropped. */
+    @Test
+    fun aLineAConstraintRefusesIsDroppedAndTheOthersApply() {
+        val w = world()
+        val table = RefusingTable(refused = "y")
+        val b = w.Device("B", extra = mapOf(PROFILE to table))
+        w.syncthing.folder("B").replace(FolderLayout.segment("A", 0), (w.sealed(line("x")) + w.sealed(line("y"))).encodeToByteArray())
+
+        assertEquals(ImportReport(changed = 1, skipped = 1), b.import())
+        assertEquals(setOf("x"), table.rows.keys)
+        assertEquals(emptyList(), runBlocking { b.db.syncDao().waiting() }, "a refused line with no missing parent does not wait")
+    }
+
+    /** A table that refuses to save the row [refused] as a foreign key would, and saves nothing of that call. */
+    private class RefusingTable(private val refused: String) : RowTable {
+        val rows = mutableMapOf<String, Row>()
+        override suspend fun load(ids: Collection<String>) = ids.mapNotNull { rows[it] }
+        override suspend fun all() = rows.values.toList()
+        override suspend fun save(rows: Collection<Row>) {
+            if (rows.any { it.id == refused }) throw SQLiteException("Error code: 787, message: FOREIGN KEY constraint failed")
+            rows.forEach { this.rows[it.id] = it }
+        }
+        override suspend fun delete(ids: Collection<String>) = ids.forEach { rows.remove(it) }
+        override fun fits(row: Row) = true
+        override fun parents(row: Row) = emptyList<Pair<String, String>>()
     }
 
     /** A record of a row in a table only [MemoryTable] would take: one group, no profile fields. */

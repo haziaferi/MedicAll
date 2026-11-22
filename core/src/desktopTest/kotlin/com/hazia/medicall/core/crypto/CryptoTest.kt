@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CryptoTest {
 
@@ -48,6 +49,25 @@ class CryptoTest {
     fun unknownKeyIdOpensToNull() {
         val other = LineCipher(mapOf("k2" to key), "k2")
         assertNull(cipher.open(other.seal("x".encodeToByteArray())))
+    }
+
+    // SPEC:R16 a line under a key not held yet is told apart from an altered one, so the importer can wait for the key.
+    @Test
+    fun keyIdOfNamesTheKeyALineIsSealedUnder_SPEC_R16() {
+        val other = LineCipher(mapOf("k2" to key), "k2")
+        val line = other.seal("x".encodeToByteArray())
+        assertEquals("k2", cipher.keyIdOf(line))
+        assertFalse(cipher.knows("k2"))
+        assertTrue(cipher.knows("k1"))
+        assertTrue(other.knows("k2"))
+
+        val own = cipher.seal("Profile A".encodeToByteArray())
+        val i = own.length - 5
+        assertEquals("k1", cipher.keyIdOf(own.substring(0, i) + (if (own[i] == 'A') 'B' else 'A') + own.substring(i + 1)), "altered, under a known key")
+        assertNull(cipher.keyIdOf("no dot at all"))
+        assertNull(cipher.keyIdOf("k1.not-base64!"))
+        assertNull(cipher.keyIdOf("k1.AAAA"), "too short to be sealed")
+        assertNull(cipher.keyIdOf("{\"name\":\"Lab 1.pdf\"}"), "a plain record is not a sealed line")
     }
 
     // SPEC:R16 every line in the sync folder is encrypted; the key id is bound into the tag.

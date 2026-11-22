@@ -13,7 +13,8 @@ import com.hazia.medicall.core.sync.Row
 import com.hazia.medicall.core.sync.Stamp
 import com.hazia.medicall.data.sync.EntityTable
 
-internal const val BLOB_REF = "blob_ref"
+/** The file reference table's name: what [com.hazia.medicall.data.bin.BinEntry.table] holds for a file reference. */
+const val BLOB_REF = "blob_ref"
 
 /** A file reference's group holding what it points at; its removal is [REMOVED], as a profile's. */
 internal const val MAIN = "main"

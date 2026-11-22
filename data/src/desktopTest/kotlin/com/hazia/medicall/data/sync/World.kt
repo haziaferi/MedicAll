@@ -27,6 +27,12 @@ internal val TEST_KEY = ByteArray(32) { (it * 7 + 3).toByte() }
 
 internal fun testCipher() = LineCipher(mapOf("k1" to TEST_KEY), "k1")
 
+/** A second invented key, as a passphrase change on one device would add before its peers have it. */
+internal val TEST_KEY_2 = ByteArray(32) { (it * 11 + 5).toByte() }
+
+/** A cipher holding [TEST_KEY] as k1 and [TEST_KEY_2] as k2, sealing under [current]. */
+internal fun twoKeyCipher(current: String) = LineCipher(mapOf("k1" to TEST_KEY, "k2" to TEST_KEY_2), current)
+
 /** A table held in memory, for rows no real table has. Its saves fail once [savesLeft] runs out. */
 internal class MemoryTable : RowTable {
     val rows = mutableMapOf<String, Row>()
@@ -63,8 +69,15 @@ internal class World(private val dir: File, seed: Int, private val segmentBytes:
     /**
      * [id] is the sync identity; two devices given the same one model a cloned device id.
      * [extra] adds tables, or replaces a real one, for rows written straight into the folder.
+     * [cipher] is the keys this device holds; by default only [TEST_KEY].
      */
-    inner class Device(val name: String, val id: String = name, extra: Map<String, RowTable> = emptyMap(), recovered: Boolean = false) {
+    inner class Device(
+        val name: String,
+        val id: String = name,
+        extra: Map<String, RowTable> = emptyMap(),
+        recovered: Boolean = false,
+        cipher: LineCipher = testCipher(),
+    ) {
         /** How far this device's wall clock is from the shared one, in milliseconds. */
         var skew = 0L
         private val wall = { syncthing.now + skew }
@@ -74,7 +87,7 @@ internal class World(private val dir: File, seed: Int, private val segmentBytes:
         private var made = 0
         val writes = LocalWrites(db, clock)
         val sync = FolderSync(
-            db, syncthing.folder(name), id, clock, tables, testCipher(), wall, segmentBytes, snapshotEvery, recovered = recovered,
+            db, syncthing.folder(name), id, clock, tables, cipher, wall, segmentBytes, snapshotEvery, recovered = recovered,
         )
 
         /** A new profile, every group stamped with one tick. */
