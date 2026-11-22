@@ -477,8 +477,8 @@ People who live with several conditions keep medicines, appointments, lab report
 **Acceptance:** A backup written on Android and one written on Windows both open in desktop 7-Zip with the passphrase, and `7z l` without it lists no names.
 
 **Not:**
-- **7-Zip-JBinding:** its native libraries carry RAR code under the unRAR restriction, which GPL-3.0 does not allow, and the Android build runs the old 7-Zip 16.02 engine.
-- **An AES-256 ZIP holding one inner archive:** it hides the names, but takes two steps to open.
+- 7-Zip-JBinding: its native libraries carry RAR code under the unRAR restriction, which GPL-3.0 does not allow, and the Android build runs the old 7-Zip 16.02 engine.
+- An AES-256 ZIP holding one inner archive: it hides the names, but takes two steps to open.
 
 **Since:** 2026-11-22 · owner · agreed rewording
 
