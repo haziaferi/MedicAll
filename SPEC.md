@@ -291,6 +291,8 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Rule:** The database and every attachment are encrypted on the device. The passphrase is entered once per device and then kept in the platform's key store.
 
+**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
+
 **Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
 
 **Since:** 2026-11-22 · owner · agreed rewording
@@ -370,31 +372,31 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R15 · Record identity
 
-**Rule:** Every record has a UUID made on the device, an `updatedAt` instant and a `deletedAt` instant that is empty until removal, and belongs to one profile. Foreign keys are enforced.
+**Rule:** Every record has a UUID made on the device and belongs to one profile. Its fields sit in groups, each carrying the stamp of its last write (R16), and its removal is a field of its own that is empty until then. Foreign keys are enforced.
 
 **Acceptance:** A record created on two devices offline keeps two distinct ids, and a record whose profile does not exist cannot be written.
 
-**Since:** 2026-11-22 · builder · own words
+**Since:** 2026-11-22 · owner · agreed rewording
 
 ### D-R16 · Sync through Syncthing
 
-**Rule:** Devices sync through a folder that Syncthing keeps in step. Each device appends full snapshots of what it writes to its own device log, reads every other device log in full, and keeps, per record, the snapshot with the later `updatedAt`. Nothing is lost by a merge: a removal is a snapshot too.
+**Rule:** Devices sync through a folder that Syncthing keeps in step. Each device appends what it writes to its own log segments and snapshots, reads the other devices' files from where it last stopped, and keeps, per field group of each record, the version with the later stamp. Nothing is lost by a merge: a removal is a field too, and edits to different groups of one record both survive.
 
-**Why:** The owner's rule is "later edit wins, non-destructive"; Lunar's device-log design does that without ever having two devices write one file.
+**Why:** The owner's rule is "later edit wins, non-destructive"; Factotum's device-log design does that without ever having two devices write one file, and already runs on Kotlin Multiplatform.
 
 **Values:**
 
 | Guard | Behaviour |
 |---|---|
-| Device log name | `devices/<deviceId>.jsonl`, no dot in the id; Syncthing conflict copies are never read as a device |
-| Clock set ahead | a snapshot stamped more than a day in the future waits until it is plausible |
-| Clock set behind | a local edit is stamped at least 1 ms after the record it edits |
-| Interrupted write | the log is written to a sibling file first and read back before it replaces the log |
+| Device files | `devices/<deviceId>/log-<seq>.jsonl` segments and `snapshot-<seq>.jsonl`; Syncthing conflict copies are merged, then deleted, and never read as a device |
+| Stamps | a hybrid logical clock: never behind the wall clock, never behind any stamp seen |
+| Clock set ahead | a line stamped more than a day past this device's clock waits until it is plausible |
+| Interrupted write | a file is written beside its target first and replaces it in one step |
 | Folder unreachable | the app asks for the folder again and says nothing was lost |
 | Encryption | every log line and every synced file is encrypted, with the key of R109 |
 | Attachments | synced through the same folder, encrypted and named by their SHA-256 (R23), so a Windows peer can open them |
 
-**Evidence:** Lunar's sync section, read 2026-11-14; its tests `ClockGuardTest` and `TornWriteGuardTest`, ported from `github.com/haziaferi/lunar` at a commit recorded when porting. The encryption and attachment rows are the builder's reading of R01 and R03.
+**Evidence:** Ported from Factotum (`Merger`, `FolderSync`, `BlobSync` and their tests, `github.com/haziaferi/factotum` at a commit recorded when porting), chosen over Lunar's Android-only sync by the owner, 2026-11-22. The clock-ahead row comes from Lunar's `ClockGuard`. The encryption and attachment rows are the builder's reading of R01 and R03.
 
 **Acceptance:** Two devices editing the same record offline converge on the later edit after a sync, whatever order the logs are read in.
 
