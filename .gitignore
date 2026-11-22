@@ -28,3 +28,6 @@ keystores/
 *.p12
 *.pem
 secrets.properties
+
+# Gradle run logs
+*.log
