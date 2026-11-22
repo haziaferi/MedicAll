@@ -3,9 +3,12 @@ package com.hazia.medicall.data.backup
 import com.hazia.medicall.data.NAME
 import com.hazia.medicall.data.sync.World
 import kotlinx.coroutines.runBlocking
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
+import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
 import org.junit.After
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.time.Instant
 import java.time.ZoneOffset
 import kotlin.test.Test
@@ -32,14 +35,15 @@ class BackupRestoreTest {
         it.syncthing.now = Instant.parse("2026-11-20T10:00:00Z").toEpochMilli()
     }
 
-    private fun backup(d: World.Device): ByteArray {
+    private fun backup(d: World.Device): File {
         val target = MemoryBackupTarget()
         val result = runBlocking { BackupWriter(d.db, d.blobs, SevenZip, target, zone = ZoneOffset.UTC, workDir = tmp.newFolder()).write(BackupKind.LATEST, password) }
         check(result is BackupResult.Written) { "$result" }
-        return target.read(BackupWriter.LATEST_NAME)!!
+        return archiveFile(tmp.root, target.read(BackupWriter.LATEST_NAME)!!)
     }
 
-    private fun restorer(d: World.Device) = BackupRestore(d.writes, d.blobs, SevenZip, workDir = tmp.newFolder())
+    /** A restore on [d], its wall clock the world's. */
+    private fun restorer(d: World.Device) = BackupRestore(d.writes, d.blobs, SevenZip, wallMillis = { worlds.last().syncthing.now })
 
     @Test
     fun freshDeviceRestoresEverything_SPEC_R22() {
@@ -86,11 +90,51 @@ class BackupRestoreTest {
 
         val b = w.Device("B")
         assertNull(runBlocking { restorer(b).restore(archive, "wrong-Passphrase-7".toCharArray()) })
-        assertNull(runBlocking { restorer(b).restore("not an archive".encodeToByteArray(), password) })
+        assertNull(runBlocking { restorer(b).restore(archiveFile(tmp.root, "not an archive".encodeToByteArray()), password) })
 
         assertEquals(emptyMap(), b.rows())
         assertEquals(emptyMap(), b.blobRefs())
         assertTrue(b.blobStore.files.isEmpty())
+    }
+
+    @Test
+    fun archiveThatOpensWithoutAPasswordIsRefused_M1() {
+        val w = world()
+        val a = w.Device("A")
+        a.create("Profile A")
+        val sealed = backup(a)
+        // The same entries in a 7z archive with no password at all.
+        val entries = mutableListOf<Pair<String, ByteArray>>()
+        check(SevenZip.readEach(sealed, password) { e -> entries += e.name to e.bytesOrNull()!! })
+        val plain = tmp.newFile("plain.7z")
+        SevenZOutputFile(plain).use { z ->
+            for ((n, bytes) in entries) { z.putArchiveEntry(SevenZArchiveEntry().apply { name = n }); z.write(bytes); z.closeArchiveEntry() }
+        }
+
+        val b = w.Device("B")
+        assertNull(runBlocking { restorer(b).restore(plain, password) })
+        assertEquals(emptyMap(), b.rows())
+    }
+
+    @Test
+    fun rowsStampedADayAheadAreRefused_M1() {
+        val w = world()
+        val a = w.Device("A")
+        a.skew = 2 * 86_400_000L
+        a.create("Profile ahead")
+        val archive = backup(a)
+
+        val b = w.Device("B")
+        val report = assertNotNull(runBlocking { restorer(b).restore(archive, password) })
+
+        assertEquals(emptyMap(), b.rows())
+        assertEquals(RestoreReport(rows = 0, files = 0, skipped = 0, ahead = 1), report)
+        assertTrue(b.clock.last <= w.syncthing.now, "the clock jumped to ${b.clock.last}")
+
+        // Once this device's clock has caught up, the same backup restores the row.
+        w.syncthing.now += 2 * 86_400_000L
+        assertEquals(RestoreReport(rows = 1, files = 0, skipped = 0, ahead = 0), runBlocking { restorer(b).restore(archive, password) })
+        assertEquals(setOf("A-0"), b.rows().keys)
     }
 
     @Test

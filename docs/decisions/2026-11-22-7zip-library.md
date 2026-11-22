@@ -23,8 +23,9 @@ sealing the header, so without the patch the file names stay readable without th
 ## 2. The patch
 
 `SevenZOutputFile` (Apache-2.0, kept with its licence header) gains `writeEncryptedHeader`:
-1. When a password is set, the plain header is sealed with AES under its own salt and IV, and
-   written as a packed stream.
+1. When a password is set, the plain header is sealed with AES under the archive's key and its own
+   IV, and written as a packed stream. There is no salt: upstream's `AES256Options(char[])` uses an
+   empty one, so the header and every entry share one key, and only their IVs differ.
 2. The archive then ends with a `kEncodedHeader` that names that stream, its AES coder, its plain
    size and its CRC.
 3. The start header points at the encoded header.
@@ -49,8 +50,8 @@ password lists both names.
 
 ## 4. Known limits, to handle in Task 12
 
-- **Upstream reuses one IV.** Commons Compress uses one `AES256Options` (one salt and IV) for every
-  entry in an archive. Nothing is decrypted by it, but it shows which entries start the same way.
+- **Upstream reuses one IV.** Commons Compress uses one `AES256Options` (one IV, and the empty salt)
+  for every entry in an archive. Nothing is decrypted by it, but it shows which entries start the same way.
   The patched copy uses a fresh IV per entry, tested.
 - **The password is held in memory.** It is copied into a `char[]` inside the writer and cleared
   once the header is written.
@@ -63,20 +64,32 @@ password lists both names.
 
 **As handled in Task 12 (2026-11-22):**
 
-- **Fresh IV per entry:** done in `SealedSevenZOutputFile`. The first entry takes the archive's
-  `AES256Options`; each later one gets the same salt and rounds (2^19) with a random IV. The
-  4-argument `AES256Options` constructor derives the key again, so each entry costs one key
-  derivation, as reading each entry already does. `SevenZipTest.everyEntryHasItsOwnIv` checks the
+- **Fresh IV per entry:** done in `SealedSevenZOutputFile`. Each entry, and the header, gets the
+  archive's one key with a random IV of its own. `SevenZipTest.everyEntryHasItsOwnIv` checks the
   first ciphertext blocks of two entries with the same bytes: equal under upstream's writer, the
   control, and different under the patched one.
+- **One key derivation per archive (2026-11-23, review finding M4):** the Task 12 writer made one
+  `AES256Options` per entry, and each derives the key again: 2^19 SHA-256 rounds, about 38 ms on the
+  desktop, per entry. `AES256Options` is final and package-private, so the patched writer has its
+  own small copy, `SealedAes256` (key bytes, IV; the salt empty and the rounds 2^19, as upstream
+  writes), with upstream's property bytes and encoding stream. The key is derived once, in the
+  writer's constructor. The reader, Commons Compress's own `SevenZFile`, still derives the key once
+  per folder, and each entry is its own folder: a library limit, so every caller reads an archive in
+  one pass (`readEach`), never one opening per entry, and the integrity check opens only the entries
+  it wants. Timings below.
 - **The patched class is renamed** `SealedSevenZOutputFile`, in the same package. Under its upstream
   name it would be a second `SevenZOutputFile` beside the library's own, which Android's dexer
   refuses as a duplicate class and the desktop resolves by classpath order.
-- **The password:** the writer's copy is cleared once the header is sealed; the reader's copy once the
-  archive is open.
+- **The password:** the writer keeps no copy, only the derived key, which it clears when the archive
+  is finished or closed, also when finishing fails (review finding L2). The UTF-16LE bytes it derives
+  the key from are cleared at once. The reader's `char[]` copy is cleared once the archive is open.
+  A library limit: Commons Compress keeps its own UTF-16LE copy of the password inside each open
+  `SevenZFile`, and the expanded key inside each `Cipher`, and zeroes neither.
 - **The seekable target:** `BackupWriter` writes to a temporary file, reads every entry back
-  under the password, then hands the bytes to the backup folder, whose write replaces the old file
-  whole or not at all.
+  under the password, streamed, then hands the file to the backup folder, whose write (review
+  finding H2) lands a temporary copy, forces it to the device, compares its streamed SHA-256, keeps
+  the old file as `<name>.prev` until the new one is in place and compared again, and only then drops
+  it. Nothing holds a whole archive in memory (review finding H1).
 - **Dependencies and licences**, as resolved for `:data` (`./gradlew :data:dependencies`):
 
 | Library | Version | Licence | Why |
@@ -116,6 +129,86 @@ interface ArchiveReader {
 Added in Task 12: `readEach(source, password, block: (name, bytes?) -> Unit): Boolean`, every entry in
 one opening, a damaged entry read as null; `read` per entry opens the archive and derives the header's
 key each time. Implemented once, in `data/src/jvmCommon/.../data/backup/SevenZip.kt`.
+
+**As changed by the tasks 10-14 review (2026-11-23, findings H1, H2, M1, M2, M3, L3).** A backup of
+scans and photos runs to hundreds of MB, so nothing takes or returns a whole archive or backup as a
+`ByteArray` any more: archives are files, entries and backups are streams, and memory holds one
+entry at a time.
+
+```kotlin
+// Archive.kt
+class ArchiveEntry(val name: String, val size: Long, val open: () -> java.io.InputStream)   // unchanged
+
+interface ArchiveWriter {
+    /** Each entry streamed from [ArchiveEntry.open]. */
+    fun write(target: java.io.File, password: CharArray, entries: List<ArchiveEntry>)        // unchanged
+}
+
+interface ArchiveReader {
+    /** Null if it does not open with [password]; with a password, also null when it opens without one.
+     *  Throws IOException only when the file itself cannot be read: that is not a wrong password. */
+    fun list(source: java.io.File, password: CharArray?): List<String>?
+    /** Every entry in one opening, each an ArchiveEntry to stream inside [block]: its size the header's,
+     *  its stream throwing IOException when it does not read back intact, its open() throwing
+     *  EntryTooLargeException when the declared size passes the cap. False as list's null. */
+    fun readEach(source: java.io.File, password: CharArray, block: (ArchiveEntry) -> Unit): Boolean
+}
+class EntryTooLargeException(val name: String, val size: Long, val cap: Long) : java.io.IOException
+
+// SevenZip.kt: `read(source, password, name)` is gone; tests keep it as a helper over readEach.
+open class SevenZipArchives(maxEntryBytes: Long = Runtime.getRuntime().maxMemory() / 4,
+                            maxMemoryKiB: Int = 64 * 1024) : ArchiveWriter, ArchiveReader
+object SevenZip : SevenZipArchives()
+
+// BackupTarget.kt
+interface BackupTarget {
+    /** Temporary copy, fsync, streamed SHA-256 compared, old copy kept as `<name>.prev`, moved over
+     *  [name], compared again; `.prev` dropped unless [keepPrevious]. Old or new, never neither. */
+    fun write(name: String, source: java.io.File, keepPrevious: Boolean = false)
+    fun openRead(name: String): java.io.InputStream?
+    fun list(): List<String>          // `.prev` copies included, temporary ones not
+    fun reachable(): Boolean
+    companion object { fun prev(name: String): String }
+}
+class DirectoryBackupTarget(root: java.nio.file.Path) : BackupTarget   // + an internal Disk hook for tests
+
+// BackupWriter.kt: constructor unchanged; it runs IntegrityCheck first.
+data class BackupResult.Written(val name: String, val files: Int,
+                                val missing: List<String> = emptyList(), val keptPrevious: Boolean = false)
+fun BackupWriter.Companion.newestFirst(names: List<String>): List<String>  // each backup then its `.prev`
+
+// BackupRestore.kt: the archive is a file; workDir is gone; a wall clock for LineGuard's rule.
+class BackupRestore internal constructor(writes: LocalWrites, blobs: Blobs,
+    reader: ArchiveReader = SevenZip, wallMillis: () -> Long = System::currentTimeMillis)
+suspend fun BackupRestore.restore(archive: java.io.File, password: CharArray): RestoreReport?
+data class RestoreReport(val rows: Int, val files: Int, val skipped: Int, val ahead: Int = 0)
+
+// IntegrityCheck.kt: constructor unchanged.
+data class IntegrityReport(val checked: Int, val damaged: List<String>, val repaired: List<String>,
+                           val unrepaired: List<String>, val notYetArrived: List<String> = emptyList())
+
+// blob/: `Blobs.markHeld(names)` and `Blobs.heldOnce()` (internal), over a new local table `blob_held`.
+```
+
+The per-entry cap defaults to a quarter of the heap: a restore holds one entry's plain bytes and its
+sealed copy at once, about 3.7 times its size. `SevenZFile`'s own memory limit is set with
+`setMaxMemoryLimitKiB(65536)`: the builder's `setMaxMemoryLimitKb`, which the review named, divides
+its argument by 1024.
+
+**Timings, desktop (Windows 11, JDK 21), before and after the key-once writer:**
+
+| Run | Before (Task 12) | After |
+|---|---|---|
+| `SevenZipInteropTest`: 30 files, backup written and read back | 2,686 ms (3,194 ms in a second run) | 1,487 ms (1,488) |
+| `BackupWriterTest.threeHundredFilesBackUpInTime_M4`: 300 small files, written and read back | 23,216 ms | 12,424 ms (12,890) |
+| `SevenZipTest.keyIsDerivedOncePerArchive_M4`: the writer alone, 300 entries | 11,377 ms | 2,109 ms (2,095) |
+
+One key derivation takes 30 to 38 ms here (the tests measured 30 ms in the final run, so limits of
+15,000 ms and 6,000 ms). What remains after the fix is the reader's derivation per
+entry (301 for the 300-file read-back), and the writer's LZMA2 encoder, set up again for each entry.
+The two tests set their limits from a derivation measured on the machine running them: the writer
+alone under 100 derivations plus 3 s, the whole backup under 400 derivations plus 3 s; the Task 12
+code is past both.
 
 ## 6. Ruled out
 

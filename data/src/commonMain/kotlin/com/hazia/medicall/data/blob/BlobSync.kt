@@ -3,6 +3,8 @@ package com.hazia.medicall.data.blob
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
@@ -22,11 +24,22 @@ internal data class BlobSeenEntity(
     @ColumnInfo(name = "local_since") val localSince: Long?,
 )
 
+/**
+ * A file this device has held (SPEC:R23): one missing here since is damaged, where a file never held
+ * has only not arrived yet. Kept until the 30 days of collection take the file. Local, never synced.
+ */
+@Entity(tableName = "blob_held")
+internal data class BlobHeldEntity(@PrimaryKey val name: String)
+
 @Dao
 internal interface BlobDao {
     @Query("SELECT * FROM blob_seen") suspend fun seen(): List<BlobSeenEntity>
     @Upsert suspend fun putSeen(rows: List<BlobSeenEntity>)
     @Query("DELETE FROM blob_seen WHERE name IN (:names)") suspend fun clearSeen(names: List<String>)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun markHeld(rows: List<BlobHeldEntity>)
+    @Query("SELECT name FROM blob_held") suspend fun heldOnce(): List<String>
+    @Query("DELETE FROM blob_held WHERE name IN (:names)") suspend fun forgetHeld(names: List<String>)
 }
 
 /**
@@ -69,13 +82,16 @@ internal class BlobSync(
         listed.filter(FolderLayout::isConflictCopy).forEach { folder.delete("$BLOBS/$it") }
         val inFolder = listed.filter(BlobName::isValid).toSet()
         val held = store.list().filter(BlobName::isValid).toMutableSet()
+        val fetched = mutableListOf<String>()
         for (name in kept - held) {
             if (name !in inFolder) continue
             val sealed = folder.read("$BLOBS/$name") ?: continue
             if (opened(cipher, sealed, name) == null) continue
             store.write(name, sealed)
             held += name
+            fetched += name
         }
+        dao.markHeld(fetched.map(::BlobHeldEntity))
         for (name in shared intersect held) {
             val sealed = store.read(name) ?: continue
             if (name in inFolder && folder.size("$BLOBS/$name") == sealed.size.toLong()) continue
@@ -86,16 +102,22 @@ internal class BlobSync(
         val seen = dao.seen().associateBy { it.name }
         val next = mutableListOf<BlobSeenEntity>()
         val cleared = mutableListOf<String>()
+        val collected = mutableListOf<String>()
         for (name in inFolder + held) {
             val was = seen[name]
             val folderSince = if (name in shared || name !in inFolder) null else was?.folderSince ?: now
             val localSince = if (name in kept || name !in held) null else was?.localSince ?: now
             if (folderSince != null && now - folderSince >= GRACE_MS) folder.delete("$BLOBS/$name")
-            if (localSince != null && now - localSince >= GRACE_MS) store.delete(name)
+            if (localSince != null && now - localSince >= GRACE_MS) {
+                store.delete(name)
+                collected += name
+            }
             if (folderSince == null && localSince == null) cleared += name else next += BlobSeenEntity(name, folderSince, localSince)
         }
         dao.putSeen(next)
         dao.clearSeen(cleared + (seen.keys - inFolder - held))
+        // Collected on purpose: should a reference name it again, it has not arrived yet, it is not damaged.
+        dao.forgetHeld(collected)
     }
 
     private companion object {

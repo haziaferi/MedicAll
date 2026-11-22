@@ -63,13 +63,16 @@ import org.apache.commons.io.output.CountingOutputStream;
  * Writes a 7z file.
  *
  * <p>
- * MedicAll patch, 2026-11-22 (SPEC:R112): a copy of Commons Compress 1.28.0's {@code SevenZOutputFile},
- * renamed so it does not clash with the library's own class on Android, and kept in this package for the
- * package-private {@code Coders}, {@code NID}, {@code AES256Options} and {@code SevenZFile}. With a password it
- * (1) seals the header, which holds the file names, under its own salt and IV, as 7-Zip's
- * "encrypt file names" ({@code -mhe=on}) does ({@link #writeEncryptedHeader}); and (2) gives every entry
- * its own IV, where upstream uses one {@code AES256Options} for all of them. The salt and the key
- * derivation's rounds are shared by the entries. Everything else is upstream's code.
+ * MedicAll patch, 2026-11-22 and 2026-11-23 (SPEC:R112): a copy of Commons Compress 1.28.0's
+ * {@code SevenZOutputFile}, renamed so it does not clash with the library's own class on Android, and kept in
+ * this package for the package-private {@code Coders}, {@code NID}, {@code AES256SHA256Decoder} and
+ * {@code SevenZFile}. With a password it (1) seals the header, which holds the file names, as 7-Zip's
+ * "encrypt file names" ({@code -mhe=on}) does ({@link #writeEncryptedHeader}); (2) gives the header and every
+ * entry its own random IV, where upstream uses one {@code AES256Options}, so one IV, for all the entries; and
+ * (3) derives the key once per archive ({@link SealedAes256}), where upstream's options derive it once each.
+ * There is no salt: as in upstream's {@code AES256Options(char[])} it is empty, so the header and every entry
+ * share one key, from 2^19 SHA-256 rounds, and only their IVs differ. The key is cleared when the archive is
+ * finished or closed, also when finishing fails. Everything else is upstream's code.
  * See docs/decisions/2026-11-22-7zip-library.md.
  * </p>
  *
@@ -139,11 +142,10 @@ public class SealedSevenZOutputFile implements Closeable {
     private CountingOutputStream[] additionalCountingStreams;
     private Iterable<? extends SevenZMethodConfiguration> contentMethods = Collections.singletonList(new SevenZMethodConfiguration(SevenZMethod.LZMA2));
     private final Map<SevenZArchiveEntry, long[]> additionalSizes = new HashMap<>();
-    private AES256Options aes256Options;
-    /** Kept to give each entry its own IV and seal the header under its own salt and IV; cleared once the header is written. */
-    private char[] headerPassword;
-    /** MedicAll patch: each entry's own AES options, the archive's salt and rounds with a fresh IV. */
-    private final Map<SevenZArchiveEntry, AES256Options> entryAes256Options = new IdentityHashMap<>();
+    /** MedicAll patch: the archive's one AES key, derived from the password once; cleared once the archive is finished. */
+    private byte[] key;
+    /** MedicAll patch: each entry's own AES options, the archive's key with a fresh IV. */
+    private final Map<SevenZArchiveEntry, SealedAes256> entryAes256Options = new IdentityHashMap<>();
     private final SecureRandom random = new SecureRandom();
 
     /**
@@ -200,8 +202,14 @@ public class SealedSevenZOutputFile implements Closeable {
         this.channel = channel;
         channel.position(SevenZFile.SIGNATURE_HEADER_SIZE);
         if (password != null) {
-            this.aes256Options = new AES256Options(password);
-            this.headerPassword = password.clone();
+            this.key = SealedAes256.deriveKey(password);
+        }
+    }
+
+    /** MedicAll patch: clears the key, which nothing needs once the header is written. */
+    private void clearKey() {
+        if (key != null) {
+            Arrays.fill(key, (byte) 0);
         }
     }
 
@@ -217,6 +225,7 @@ public class SealedSevenZOutputFile implements Closeable {
                 finish();
             }
         } finally {
+            clearKey();
             channel.close();
         }
     }
@@ -313,7 +322,14 @@ public class SealedSevenZOutputFile implements Closeable {
             throw new IOException("This archive has already been finished");
         }
         finished = true;
+        try {
+            writeHeaders();
+        } finally {
+            clearKey();
+        }
+    }
 
+    private void writeHeaders() throws IOException {
         long headerPosition = channel.position();
 
         final ByteArrayOutputStream headerBaos = new ByteArrayOutputStream();
@@ -322,7 +338,7 @@ public class SealedSevenZOutputFile implements Closeable {
         writeHeader(header);
         header.flush();
         byte[] headerBytes = headerBaos.toByteArray();
-        if (headerPassword != null) {
+        if (key != null) {
             // The header holds the file names: seal it too, as 7-Zip's "encrypt file names" does.
             final long packPosition = headerPosition - SevenZFile.SIGNATURE_HEADER_SIZE;
             headerBytes = writeEncryptedHeader(headerBytes, packPosition);
@@ -360,10 +376,10 @@ public class SealedSevenZOutputFile implements Closeable {
         final Iterable<? extends SevenZMethodConfiguration> ms = entry.getContentMethods();
         Iterable<? extends SevenZMethodConfiguration> iter = ms == null ? contentMethods : ms;
 
-        if (aes256Options != null) {
-            // prepend encryption
+        if (key != null) {
+            // prepend encryption; MedicAll patch: its options are the entry's own SealedAes256, not upstream's
             iter = Stream
-                    .concat(Stream.of(new SevenZMethodConfiguration(SevenZMethod.AES256SHA256, entryAes256Options(entry))), StreamSupport.stream(iter.spliterator(), false))
+                    .concat(Stream.of(new SevenZMethodConfiguration(SevenZMethod.AES256SHA256)), StreamSupport.stream(iter.spliterator(), false))
                     .collect(Collectors.toList());
         }
         return iter;
@@ -371,18 +387,17 @@ public class SealedSevenZOutputFile implements Closeable {
 
     /**
      * MedicAll patch: [entry]'s own AES options, made once, when its stream is set up, and found again when
-     * the header describes it. The first entry takes the archive's options; every later one gets the same
-     * salt and rounds with a fresh random IV, so no two entries are sealed under the same key and IV.
+     * the header describes it: the archive's key with a fresh random IV, so no two streams are sealed under
+     * the same key and IV.
      */
-    private AES256Options entryAes256Options(final SevenZArchiveEntry entry) {
-        return entryAes256Options.computeIfAbsent(entry, e -> {
-            if (entryAes256Options.isEmpty()) {
-                return aes256Options;
-            }
-            final byte[] iv = new byte[aes256Options.getIv().length];
-            random.nextBytes(iv);
-            return new AES256Options(headerPassword, aes256Options.getSalt(), iv, aes256Options.getNumCyclesPower());
-        });
+    private SealedAes256 entryAes256Options(final SevenZArchiveEntry entry) {
+        return entryAes256Options.computeIfAbsent(entry, e -> newAes256Options());
+    }
+
+    private SealedAes256 newAes256Options() {
+        final byte[] iv = new byte[SealedAes256.IV_SIZE];
+        random.nextBytes(iv);
+        return new SealedAes256(key, iv);
     }
 
     /*
@@ -465,13 +480,14 @@ public class SealedSevenZOutputFile implements Closeable {
         OutputStream out = new OutputStreamWrapper(); // NOSONAR
         final ArrayList<CountingOutputStream> moreStreams = new ArrayList<>();
         boolean first = true;
-        for (final SevenZMethodConfiguration m : getContentMethods(files.get(files.size() - 1))) {
+        final SevenZArchiveEntry entry = files.get(files.size() - 1);
+        for (final SevenZMethodConfiguration m : getContentMethods(entry)) {
             if (!first) {
                 final CountingOutputStream cos = new CountingOutputStream(out);
                 moreStreams.add(cos);
                 out = cos;
             }
-            out = Coders.addEncoder(out, m.getMethod(), m.getOptions());
+            out = m.getMethod() == SevenZMethod.AES256SHA256 ? entryAes256Options(entry).encoder(out) : Coders.addEncoder(out, m.getMethod(), m.getOptions());
             first = false;
         }
         if (!moreStreams.isEmpty()) {
@@ -821,7 +837,11 @@ public class SealedSevenZOutputFile implements Closeable {
         int numCoders = 0;
         for (final SevenZMethodConfiguration m : getContentMethods(entry)) {
             numCoders++;
-            writeSingleCodec(m, bos);
+            if (m.getMethod() == SevenZMethod.AES256SHA256) {
+                writeSingleCodec(m.getMethod(), entryAes256Options(entry).properties(), bos);
+            } else {
+                writeSingleCodec(m, bos);
+            }
         }
 
         writeUint64(header, numCoders);
@@ -833,17 +853,14 @@ public class SealedSevenZOutputFile implements Closeable {
     }
 
     /**
-     * Writes [plain] (the header) AES-sealed under its own salt and IV at the channel's position, and
-     * returns the small "encoded header" that says where it is and how to open it.
+     * Writes [plain] (the header) AES-sealed under the archive's key and its own IV at the channel's
+     * position, and returns the small "encoded header" that says where it is and how to open it.
      */
     private byte[] writeEncryptedHeader(final byte[] plain, final long packPosition) throws IOException {
-        final AES256Options options = new AES256Options(headerPassword);
-        Arrays.fill(headerPassword, '\0');
-        headerPassword = null;
-        final SevenZMethodConfiguration aes = new SevenZMethodConfiguration(SevenZMethod.AES256SHA256, options);
+        final SealedAes256 options = newAes256Options();
 
         final ByteArrayOutputStream sealed = new ByteArrayOutputStream();
-        try (OutputStream out = Coders.addEncoder(sealed, SevenZMethod.AES256SHA256, options)) {
+        try (OutputStream out = options.encoder(sealed)) {
             out.write(plain);
         }
         final byte[] packed = sealed.toByteArray();
@@ -866,7 +883,7 @@ public class SealedSevenZOutputFile implements Closeable {
         writeUint64(h, 1);
         h.write(0);
         writeUint64(h, 1);
-        writeSingleCodec(aes, h);
+        writeSingleCodec(SevenZMethod.AES256SHA256, options.properties(), h);
         h.write(NID.kCodersUnpackSize);
         writeUint64(h, plain.length);
         h.write(NID.kCRC);
@@ -912,8 +929,11 @@ public class SealedSevenZOutputFile implements Closeable {
     }
 
     private void writeSingleCodec(final SevenZMethodConfiguration m, final OutputStream bos) throws IOException {
-        final byte[] id = m.getMethod().getId();
-        final byte[] properties = Coders.findByMethod(m.getMethod()).getOptionsAsProperties(m.getOptions());
+        writeSingleCodec(m.getMethod(), Coders.findByMethod(m.getMethod()).getOptionsAsProperties(m.getOptions()), bos);
+    }
+
+    private void writeSingleCodec(final SevenZMethod method, final byte[] properties, final OutputStream bos) throws IOException {
+        final byte[] id = method.getId();
 
         int codecFlags = id.length;
         if (properties.length > 0) {

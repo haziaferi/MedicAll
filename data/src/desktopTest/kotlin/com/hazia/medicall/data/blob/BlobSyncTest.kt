@@ -46,6 +46,24 @@ class BlobSyncTest {
         assertEquals(hash, b.blobRefs().getValue(id).groups.getValue("main").values["sha256"])
         assertContentEquals(plain, go { b.blobs.read(id) })
         assertEquals(setOf("blobs/$hash"), blobPaths("B"))
+        // B has held it now: lost later, it is damaged, not on its way (SPEC:R23).
+        assertTrue(hash in go { b.blobs.heldOnce() })
+    }
+
+    @Test
+    fun collectedFileIsNoLongerHeld_SPEC_R23() = two(5) { a, _ ->
+        syncthing.now = day
+        val profile = a.create("Profile A")
+        go { a.blobs.add(profile, "Lab 1.pdf", "application/pdf", plain) }
+        assertTrue(hash in go { a.blobs.heldOnce() })
+
+        a.purge(profile)
+        a.export()
+        syncthing.now += 31 * day
+        a.export()
+
+        assertEquals(emptyList(), a.blobStore.list())
+        assertFalse(hash in go { a.blobs.heldOnce() }, "a file collected on purpose would later count as damaged")
     }
 
     @Test

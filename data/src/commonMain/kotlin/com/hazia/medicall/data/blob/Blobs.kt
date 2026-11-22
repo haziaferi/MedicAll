@@ -25,6 +25,7 @@ class Blobs internal constructor(
     private val cipher: LineCipher,
 ) {
     private val refs = db.blobRefDao()
+    private val dao = db.blobDao()
 
     /**
      * Stores [bytes] for [profileId] as [name] of type [mime], and returns the new file reference's
@@ -33,6 +34,7 @@ class Blobs internal constructor(
      */
     suspend fun add(profileId: String, name: String, mime: String, bytes: ByteArray): String {
         val hash = storeBytes(bytes)
+        markHeld(listOf(hash))
         val id = Ids.new()
         writes.write(mapOf(BLOB_REF to listOf(id))) { staged ->
             val s = writes.clock.tick()
@@ -47,7 +49,7 @@ class Blobs internal constructor(
     /**
      * Stores [bytes] by their hash, which it returns, with no file reference: a restore re-adding a
      * file a merged reference names (SPEC:R22), or a repair (SPEC:R23). A copy here that is damaged is
-     * replaced; an intact one is left as it is.
+     * replaced; an intact one is left as it is. The caller then records it with [markHeld].
      */
     internal fun storeBytes(bytes: ByteArray): String {
         val hash = sha256Hex(bytes)
@@ -70,6 +72,14 @@ class Blobs internal constructor(
 
     /** The names of the copies held here. */
     internal fun held(): List<String> = store.list()
+
+    /** Records that this device holds [names] (SPEC:R23): one of them missing later is damaged, not on its way. */
+    internal suspend fun markHeld(names: Collection<String>) {
+        if (names.isNotEmpty()) dao.markHeld(names.filter(BlobName::isValid).map(::BlobHeldEntity))
+    }
+
+    /** Every file this device has held, and not collected since: what [markHeld] recorded. */
+    internal suspend fun heldOnce(): Set<String> = dao.heldOnce().toSet()
 
     /**
      * The plain bytes of the copy named [hash], when it opens and matches its name (SPEC:R23); null

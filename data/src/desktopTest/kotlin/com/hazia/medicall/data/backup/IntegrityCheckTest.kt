@@ -116,13 +116,47 @@ class IntegrityCheckTest {
         assertEquals(listOf(good.hash), check(good.a, unreachable).unrepaired)
     }
 
+    @Test
+    fun fileNotArrivedYetIsNotDamaged_M3() {
+        val s = setup()
+        val profile = s.a.rows().keys.single()
+        // A reference from another device whose file has not reached this one.
+        s.a.addBlobRef(profile)
+
+        val report = check(s.a, MemoryBackupTarget())
+
+        assertEquals(emptyList(), report.damaged)
+        assertEquals(emptyList(), report.unrepaired)
+        assertEquals(IntegrityReport(checked = 2, damaged = emptyList(), repaired = emptyList(), unrepaired = emptyList(), notYetArrived = listOf("ab".repeat(32))), report)
+
+        // A file this device held, then lost, is damaged, not on its way.
+        s.a.blobStore.files.remove(s.noteHash)
+        val lost = check(s.a, MemoryBackupTarget())
+        assertEquals(listOf(s.noteHash), lost.damaged)
+        assertEquals(listOf(s.noteHash), lost.unrepaired)
+        assertEquals(listOf("ab".repeat(32)), lost.notYetArrived)
+    }
+
+    @Test
+    fun malformedHashIsPassedOver_L4() {
+        val s = setup()
+        val ref = s.a.db.blobRefDao().let { dao -> runBlocking { dao.allBlobRefs() } }.first()
+        runBlocking { s.a.db.blobRefDao().putBlobRefs(listOf(ref.copy(id = "malformed", sha256 = "not-a-hash"))) }
+
+        val report = check(s.a, MemoryBackupTarget())
+
+        assertEquals(IntegrityReport(2, emptyList(), emptyList(), emptyList()), report)
+        val written = runBlocking { BackupWriter(s.a.db, s.a.blobs, SevenZip, MemoryBackupTarget(), wallMillis = { start }, zone = ZoneOffset.UTC, workDir = tmp.newFolder()).write(BackupKind.LATEST, password) }
+        assertEquals(2, (written as BackupResult.Written).files)
+    }
+
     /** Rewrites [name] in [target] with [entry]'s bytes changed, every other entry as it was. */
     private fun alterEntry(target: MemoryBackupTarget, name: String, entry: String) {
         val source = archiveFile(tmp.root, target.read(name)!!)
         val entries = mutableListOf<ArchiveEntry>()
-        check(SevenZip.readEach(source, password) { n, bytes ->
-            val b = if (n == entry) "Other invented bytes".encodeToByteArray() else bytes!!
-            entries += ArchiveEntry(n, b.size.toLong()) { b.inputStream() }
+        check(SevenZip.readEach(source, password) { e ->
+            val b = if (e.name == entry) "Other invented bytes".encodeToByteArray() else e.bytesOrNull()!!
+            entries += ArchiveEntry(e.name, b.size.toLong()) { b.inputStream() }
         })
         check(entries.any { it.name == entry }) { "no entry $entry" }
         val out = File(tmp.root, "altered.7z")
