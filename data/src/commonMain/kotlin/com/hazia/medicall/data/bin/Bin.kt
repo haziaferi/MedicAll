@@ -78,10 +78,10 @@ class Bin internal constructor(
         }
     }
 
-    /** Everything in the bin, oldest removal first. */
+    /** Everything in the bin, oldest removal first, each with the moment its 30 days count from (as [purgeExpired] counts it). */
     suspend fun contents(): List<BinEntry> =
-        (profiles.removedProfiles().map { BinEntry(PROFILE, it.id, it.removedAt!!) } +
-            blobRefs.removedBlobRefs().map { BinEntry(BLOB_REF, it.id, it.removedAt!!) })
+        (profiles.removedProfiles().map { BinEntry(PROFILE, it.id, maxOf(it.removedAt!!, it.removedHlc)) } +
+            blobRefs.removedBlobRefs().map { BinEntry(BLOB_REF, it.id, maxOf(it.removedAt!!, it.removedHlc)) })
             .sortedWith(compareBy({ it.removedAt }, { it.table }, { it.id }))
 
     /**
@@ -129,7 +129,7 @@ class Bin internal constructor(
             val goneProfiles = targets[PROFILE].orEmpty().filter { id -> store.row(id)?.inBinSince()?.let(due) == true }.toSet()
             val goneRefs = targets[BLOB_REF].orEmpty().filter { id ->
                 val ref = store.row(id) ?: return@filter false
-                ref.groups[MAIN]?.values?.get("profile_id") as String? in goneProfiles ||ref.inBinSince()?.let(due) == true
+                ref.groups[MAIN]?.values?.get("profile_id") as String? in goneProfiles || ref.inBinSince()?.let(due) == true
             }
             (goneRefs + goneProfiles).forEach { writes.merger.purge(store, it) }
         }
