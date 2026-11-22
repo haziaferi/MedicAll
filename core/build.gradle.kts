@@ -23,6 +23,10 @@ kotlin {
         androidMain { dependsOn(jvmShared) }
         getByName("desktopMain") { dependsOn(jvmShared) }
 
+        commonMain.dependencies {
+            // The element API only, so no serialization compiler plugin (as in Factotum's :data).
+            implementation(libs.kotlinx.serialization.json)
+        }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
