@@ -19,27 +19,33 @@ object KeyDerivation {
  * Seals what goes into the sync folder (SPEC:R16): AES-256-GCM, one line of text per sealed item,
  * written as `<keyId>.<base64url(nonce + ciphertext + tag)>`. The key id lets a line written under
  * an older key still open after the passphrase changes ([keys] holds every key this device knows).
+ * The key id is bound into the tag as associated data, so a line cannot be relabelled with another id.
+ *
+ * Nonces are random, 96 bits: safe for about 2^32 seals per key, far beyond what one person's records need.
  */
 @OptIn(ExperimentalEncodingApi::class)
-class LineCipher(private val keys: Map<String, ByteArray>, val currentKeyId: String) {
+class LineCipher(keys: Map<String, ByteArray>, val currentKeyId: String) {
+
+    private val keys: Map<String, ByteArray> = keys.mapValues { it.value.copyOf() }
 
     init {
-        require(currentKeyId in keys) { "no key for the current key id" }
+        require(currentKeyId in this.keys) { "no key for the current key id" }
         require('.' !in currentKeyId) { "a key id cannot contain a dot" }
     }
 
     fun seal(plain: ByteArray): String =
-        currentKeyId + "." + Base64.UrlSafe.encode(aesGcmSeal(keys.getValue(currentKeyId), plain))
+        currentKeyId + "." + Base64.UrlSafe.encode(aesGcmSeal(keys.getValue(currentKeyId), plain, currentKeyId.encodeToByteArray()))
 
-    /** Every key this cipher can open lines with, by key id; only [KeyFolder] reads it, to carry them across a passphrase change. */
-    internal fun knownKeys(): Map<String, ByteArray> = keys
+    /** Every key this cipher can open lines with, by key id (copies); only [KeyFolder] reads it, to carry them across a passphrase change. */
+    internal fun knownKeys(): Map<String, ByteArray> = keys.mapValues { it.value.copyOf() }
 
     /** The plain bytes, or null when the key id is unknown, the text is not a sealed line, or it was altered. */
     fun open(line: String): ByteArray? {
         val dot = line.indexOf('.')
         if (dot <= 0) return null
-        val key = keys[line.substring(0, dot)] ?: return null
+        val keyId = line.substring(0, dot)
+        val key = keys[keyId] ?: return null
         val sealed = runCatching { Base64.UrlSafe.decode(line, dot + 1) }.getOrNull() ?: return null
-        return aesGcmOpen(key, sealed)
+        return aesGcmOpen(key, sealed, keyId.encodeToByteArray())
     }
 }

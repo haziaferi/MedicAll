@@ -2,7 +2,7 @@ package com.hazia.medicall.core.crypto
 
 import java.security.MessageDigest
 import java.security.SecureRandom
-import javax.crypto.AEADBadTagException
+import java.security.GeneralSecurityException
 import javax.crypto.Cipher
 import javax.crypto.Mac
 import javax.crypto.SecretKeyFactory
@@ -23,20 +23,23 @@ internal actual fun pbkdf2Sha256(passphrase: CharArray, salt: ByteArray, iterati
     }
 }
 
-internal actual fun aesGcmSeal(key: ByteArray, plain: ByteArray): ByteArray {
+internal actual fun aesGcmSeal(key: ByteArray, plain: ByteArray, aad: ByteArray): ByteArray {
     val nonce = secureRandomBytes(NONCE_BYTES)
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, nonce))
+    cipher.updateAAD(aad)
     return nonce + cipher.doFinal(plain)
 }
 
-internal actual fun aesGcmOpen(key: ByteArray, sealed: ByteArray): ByteArray? {
+internal actual fun aesGcmOpen(key: ByteArray, sealed: ByteArray, aad: ByteArray): ByteArray? {
     if (sealed.size < NONCE_BYTES + TAG_BITS / 8) return null
-    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-    cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, sealed, 0, NONCE_BYTES))
     return try {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, sealed, 0, NONCE_BYTES))
+        cipher.updateAAD(aad)
         cipher.doFinal(sealed, NONCE_BYTES, sealed.size - NONCE_BYTES)
-    } catch (_: AEADBadTagException) {
+    } catch (_: GeneralSecurityException) {
+        // AEADBadTagException on the JDK; other providers (Conscrypt on Android) may throw another subclass.
         null
     }
 }

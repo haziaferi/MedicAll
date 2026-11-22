@@ -50,6 +50,14 @@ class CryptoTest {
         assertNull(cipher.open(other.seal("x".encodeToByteArray())))
     }
 
+    // SPEC:R16 every line in the sync folder is encrypted; the key id is bound into the tag.
+    @Test
+    fun relabelledLineOpensToNull_SPEC_R16() {
+        val twoIds = LineCipher(mapOf("k1" to key, "k2" to key), "k1")
+        val line = twoIds.seal("Profile A".encodeToByteArray())
+        assertNull(twoIds.open("k2" + line.removePrefix("k1")), "same key bytes, another id: the tag refuses it")
+    }
+
     @Test
     fun sealedLineHasNoNewline() {
         val line = cipher.seal(ByteArray(10_000) { 10 })
