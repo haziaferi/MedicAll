@@ -12,6 +12,7 @@ import com.hazia.medicall.data.sync.LostEntity
 import com.hazia.medicall.data.sync.OutboxEntity
 import com.hazia.medicall.data.sync.PurgeEntity
 import com.hazia.medicall.data.sync.ReadEntity
+import com.hazia.medicall.data.sync.RowTable
 import com.hazia.medicall.data.sync.SyncDao
 import com.hazia.medicall.data.sync.WaitingEntity
 
@@ -41,6 +42,18 @@ abstract class MedicAllDatabase : RoomDatabase() {
  * [SchemaTriggers] queues writes to each for export.
  */
 internal val SYNCED_TABLES = listOf(PROFILE, BLOB_REF)
+
+/** In [SYNCED_TABLES]' order, parents before children, which is the order a snapshot is written in. */
+internal fun MedicAllDatabase.syncedTables(): Map<String, RowTable> =
+    mapOf(PROFILE to profileTable(profileDao()), BLOB_REF to blobRefTable(blobRefDao()))
+        .also { check(it.keys.toList() == SYNCED_TABLES) { "every synced table needs its export triggers" } }
+
+/**
+ * SPEC:R16: in every group the later stamp wins. No group asks a person when both sides changed
+ * it (Factotum's item schedule did), and none keeps the losing version (Factotum's page text did).
+ */
+internal val ASK_GROUPS = emptySet<String>()
+internal val KEEP_LOSER_GROUPS = emptySet<String>()
 
 // Room's KSP processor generates the actual for each target.
 @Suppress("KotlinNoActualForExpect")

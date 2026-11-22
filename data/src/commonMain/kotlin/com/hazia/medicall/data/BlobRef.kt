@@ -8,6 +8,10 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Upsert
+import com.hazia.medicall.core.sync.Group
+import com.hazia.medicall.core.sync.Row
+import com.hazia.medicall.core.sync.Stamp
+import com.hazia.medicall.data.sync.EntityTable
 
 internal const val BLOB_REF = "blob_ref"
 
@@ -54,4 +58,33 @@ internal interface BlobRefDao {
 
     @Query("DELETE FROM blob_ref WHERE id IN (:ids)")
     suspend fun deleteBlobRefs(ids: List<String>)
+}
+
+internal fun blobRefTable(dao: BlobRefDao) =
+    EntityTable(dao::blobRefs, dao::allBlobRefs, dao::putBlobRefs, dao::deleteBlobRefs, BlobRefEntity::toRow, Row::toBlobRefEntity) {
+        listOf(PROFILE to it.profileId)
+    }
+
+internal fun BlobRefEntity.toRow() = Row(BLOB_REF, id, mapOf(
+    MAIN to Group(Stamp(mainHlc, mainDevice), mapOf("profile_id" to profileId, "sha256" to sha256, "size" to size, "name" to name, "mime" to mime)),
+    REMOVED to Group(Stamp(removedHlc, removedDevice), mapOf("removed_at" to removedAt)),
+))
+
+/** Throws when [this] is not a file reference this version can read. */
+internal fun Row.toBlobRefEntity(): BlobRefEntity {
+    val main = groups.getValue(MAIN)
+    val removed = groups.getValue(REMOVED)
+    return BlobRefEntity(
+        id = id,
+        profileId = main.values["profile_id"] as String,
+        sha256 = main.values["sha256"] as String,
+        size = main.values["size"] as Long,
+        name = main.values["name"] as String,
+        mime = main.values["mime"] as String,
+        mainHlc = main.stamp.hlc,
+        mainDevice = main.stamp.device,
+        removedAt = removed.values["removed_at"] as Long?,
+        removedHlc = removed.stamp.hlc,
+        removedDevice = removed.stamp.device,
+    )
 }
