@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- No INTERNET permission: the only network use is the medicine-list refresh, which arrives in phase 3 (SPEC:R12). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="MedicAll" />
+    <!-- No Android backup: the sealed database key and the encrypted database stay on the device;
+         MedicAll writes its own encrypted backups (SPEC:R10, SPEC:R22). -->
+    <application
+        android:allowBackup="false"
+        android:label="MedicAll" />
 </manifest>

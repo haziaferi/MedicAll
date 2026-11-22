@@ -39,6 +39,8 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.androidx.sqlite.framework)
+            // SPEC:R10 the Android database is SQLCipher.
+            api(libs.sqlcipher.android)
         }
         getByName("desktopMain").dependencies {
             implementation(libs.androidx.sqlite.bundled)
