@@ -1,0 +1,30 @@
+# Personal and sensitive data never enters this public repository (SPEC:R06).
+# Reference material (third-party sources, APKs, phone walks, the owner's lab
+# PDFs) lives outside this folder, in ../_ref/ and in the owner's own folders.
+_ref/
+personal/
+private/
+*.real.pdf
+
+# Local machine settings
+local.properties
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Build output
+build/
+.gradle/
+.kotlin/
+captures/
+*.apk
+*.aab
+
+# Secrets
+*.jks
+*.keystore
+keystores/
+*.p12
+*.pem
+secrets.properties

@@ -1,0 +1,125 @@
+# MedicAll spec history
+
+Not a source of current rules: `SPEC.md` is. One line per change, newest at the bottom. Retired wording is in git.
+
+- 2026-11-22 · R01 · added · purpose statement · owner
+- 2026-11-22 · R02 · added · jobs and how often · owner
+- 2026-11-22 · R03 · added · platforms · owner
+- 2026-11-22 · R04 · added · stack · owner
+- 2026-11-22 · R05 · added · identity and licence · owner
+- 2026-11-22 · R06 · added · public repository, private data · owner
+- 2026-11-22 · R07 · added · how changes land · owner
+- 2026-11-22 · R08 · added · languages · owner
+- 2026-11-22 · R09 · added · test devices · owner
+- 2026-11-22 · R10 · added · encryption at rest · owner
+- 2026-11-22 · R11 · added · app lock · owner
+- 2026-11-22 · R12 · added · network use · owner
+- 2026-11-22 · R13 · added · lock-screen privacy of notifications · owner
+- 2026-11-22 · R14 · added · profiles · owner
+- 2026-11-22 · R15 · added · record identity · builder
+- 2026-11-22 · R16 · added · sync through syncthing · owner
+- 2026-11-22 · R17 · added · history keeps its labels · builder
+- 2026-11-22 · R18 · added · bin · owner
+- 2026-11-22 · R19 · added · irreversible actions · owner
+- 2026-11-22 · R20 · added · units are stored canonically · builder
+- 2026-11-22 · R21 · added · attachments · owner
+- 2026-11-22 · R22 · added · backups · owner
+- 2026-11-22 · R23 · added · file integrity · owner
+- 2026-11-22 · R24 · added · link to the original · owner
+- 2026-11-22 · R25 · added · sharing · owner
+- 2026-11-22 · R26 · added · medicine screens · builder
+- 2026-11-22 · R27 · added · scheduling engine · owner
+- 2026-11-22 · R28 · added · medicine options · owner
+- 2026-11-22 · R29 · added · brand and product setting · owner
+- 2026-11-22 · R30 · added · steady track · owner
+- 2026-11-22 · R31 · added · excipients · owner
+- 2026-11-22 · R32 · added · entry by scanning the box · owner
+- 2026-11-22 · R33 · added · bollino barcode encoding · builder
+- 2026-11-22 · R34 · added · aifa medicine list · owner
+- 2026-11-22 · R35 · added · refresh of the medicine list · owner
+- 2026-11-22 · R36 · added · aifa data licence · builder
+- 2026-11-22 · R37 · added · prescribed, not yet collected · owner
+- 2026-11-22 · R38 · added · holding a medicine before a test · owner
+- 2026-11-22 · R39 · added · contraindications prompt · owner
+- 2026-11-22 · R40 · added · lab report readers · owner
+- 2026-11-22 · R41 · added · layouts in version 1 · owner
+- 2026-11-22 · R42 · added · analyte list · owner
+- 2026-11-22 · R43 · added · unit equivalences · owner
+- 2026-11-22 · R44 · added · result line · owner
+- 2026-11-22 · R45 · added · range kinds · owner
+- 2026-11-22 · R46 · added · trends · owner
+- 2026-11-22 · R47 · added · drug level and last dose · owner
+- 2026-11-22 · R48 · added · blood pressure · owner
+- 2026-11-22 · R49 · added · irregular-heartbeat mark · owner
+- 2026-11-22 · R50 · added · glucose · owner
+- 2026-11-22 · R51 · added · daily log · owner
+- 2026-11-22 · R52 · added · tracker kinds · owner
+- 2026-11-22 · R53 · added · scale direction · owner
+- 2026-11-22 · R54 · added · "nothing today" · owner
+- 2026-11-22 · R55 · added · custom scale · owner
+- 2026-11-22 · R56 · added · ready-made trackers · owner
+- 2026-11-22 · R57 · added · mood · owner
+- 2026-11-22 · R58 · added · energy · owner
+- 2026-11-22 · R59 · added · tension · owner
+- 2026-11-22 · R60 · added · libido and sex · owner
+- 2026-11-22 · R61 · added · pain · owner
+- 2026-11-22 · R62 · added · sleep · owner
+- 2026-11-22 · R63 · added · frequency class · owner
+- 2026-11-22 · R64 · added · near-synonym pairs · owner
+- 2026-11-22 · R65 · added · calendar · owner
+- 2026-11-22 · R66 · added · appointment details · owner
+- 2026-11-22 · R67 · added · emergency card content · owner
+- 2026-11-22 · R68 · added · android emergency information · owner
+- 2026-11-22 · R69 · added · wallet card · owner
+- 2026-11-22 · R70 · added · all notifications are optional · owner
+- 2026-11-22 · R71 · added · patterns are reported once · owner
+- 2026-11-22 · R72 · added · empty reviews are skipped · owner
+- 2026-11-22 · R73 · added · notification kinds · owner
+- 2026-11-22 · R74 · added · name first · owner
+- 2026-11-22 · R75 · added · doctor summary · owner
+- 2026-11-22 · R76 · added · pattern types · owner
+- 2026-11-22 · R77 · added · pattern wording · owner
+- 2026-11-22 · R78 · added · counts · owner
+- 2026-11-22 · R79 · added · drift · owner
+- 2026-11-22 · R80 · added · watched patterns and search · owner
+- 2026-11-22 · R81 · added · search safeguards · owner
+- 2026-11-22 · R82 · added · entries behind a pattern · owner
+- 2026-11-22 · R83 · added · episodes · owner
+- 2026-11-22 · R84 · added · short illnesses · owner
+- 2026-11-22 · R85 · added · experiments · owner
+- 2026-11-22 · R86 · added · log-first stretch · owner
+- 2026-11-22 · R87 · added · period module · owner
+- 2026-11-22 · R88 · added · period trackers · owner
+- 2026-11-22 · R89 · added · hormonal contraception switch · owner
+- 2026-11-22 · R90 · added · pregnancy and fertility bundle · owner
+- 2026-11-22 · R91 · added · bundles · owner
+- 2026-11-22 · R92 · added · bundle names · owner
+- 2026-11-22 · R93 · added · visual identity · owner
+- 2026-11-22 · R94 · added · today screen · owner
+- 2026-11-22 · R95 · added · frontend decisions are the owner's · owner
+- 2026-11-22 · R96 · added · a dose confirmed on two devices · builder
+- 2026-11-22 · R97 · added · a profile removed · builder
+- 2026-11-22 · R98 · added · time zones and daylight saving · owner
+- 2026-11-22 · R99 · added · test plan · builder
+- 2026-11-22 · R100 · added · rollout phases · owner
+- 2026-11-22 · R101 · added · no interaction checks · owner
+- 2026-11-22 · R102 · added · no diagnosis or advice · owner
+- 2026-11-22 · R103 · added · no ai or llm features · owner
+- 2026-11-22 · R104 · added · no cloud or server · owner
+- 2026-11-22 · R105 · added · no store distribution · owner
+- 2026-11-22 · R106 · added · no fertility-window advice · owner
+- 2026-11-22 · R107 · added · no wearable sync in version 1 · owner
+- 2026-11-22 · R108 · added · standalone app · owner
+- 2026-11-22 · R109 · added · one passphrase for devices, sync and backups · builder
+- 2026-11-22 · R110 · added · profiles per device and where reminders fire · builder
+- 2026-11-22 · R111 · added · how the emergency card shows on the lock screen · builder
+- 2026-11-22 · R112 · added · 7-zip writer · builder
+- 2026-11-22 · R109 · kind · Q → D, passphrase changeable by the person · owner
+- 2026-11-22 · R110 · kind · Q → D · owner
+- 2026-11-22 · R111 · kind · Q → D, details when phase 8 starts · owner
+- 2026-11-22 · R112 · kind · Q → D · owner
+- 2026-11-22 · R113 · added · tracker groups, sleep in none · owner
+- 2026-11-22 · R92 · changed · narrowed to condition bundle names · owner
+- 2026-11-22 · R43 · changed · neutral example analyte · builder
+- 2026-11-22 · R76 · changed · neutral example analyte · builder
+- 2026-11-22 · R77 · changed · neutral example analyte · builder
