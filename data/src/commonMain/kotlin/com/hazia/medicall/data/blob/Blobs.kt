@@ -6,6 +6,7 @@ import com.hazia.medicall.core.sync.Group
 import com.hazia.medicall.core.sync.Ids
 import com.hazia.medicall.core.sync.Row
 import com.hazia.medicall.data.BLOB_REF
+import com.hazia.medicall.data.BlobRefEntity
 import com.hazia.medicall.data.LocalWrites
 import com.hazia.medicall.data.MAIN
 import com.hazia.medicall.data.MedicAllDatabase
@@ -53,6 +54,19 @@ class Blobs internal constructor(
         val ref = refs.blobRefs(listOf(id)).singleOrNull() ?: return null
         return verified(store, cipher, ref.sha256)
     }
+
+    /** Every file reference, the bin's included: what a backup holds (SPEC:R22). */
+    internal suspend fun refs(): List<BlobRefEntity> = refs.allBlobRefs()
+
+    /** The names of the copies held here. */
+    internal fun held(): List<String> = store.list()
+
+    /**
+     * The plain bytes of the copy named [hash], when it opens and matches its name (SPEC:R23); null
+     * otherwise. Unlike [read], a damaged copy is left where it is, so the integrity check that looks
+     * for damage finds it, and repairs it from a backup.
+     */
+    internal fun intact(hash: String): ByteArray? = store.read(hash)?.let { opened(cipher, it, hash) }
 }
 
 /** The SHA-256 of [bytes] in lower-case hex. */

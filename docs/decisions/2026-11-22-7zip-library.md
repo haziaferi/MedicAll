@@ -61,6 +61,40 @@ password lists both names.
   commons-lang3. Check their licences (xz: public domain/0BSD; commons-*: Apache-2.0) and the R8
   keep rules on Android.
 
+**As handled in Task 12 (2026-11-22):**
+
+- **Fresh IV per entry:** done in `SealedSevenZOutputFile`. The first entry takes the archive's
+  `AES256Options`; each later one gets the same salt and rounds (2^19) with a random IV. The
+  4-argument `AES256Options` constructor derives the key again, so each entry costs one key
+  derivation, as reading each entry already does. `SevenZipTest.everyEntryHasItsOwnIv` checks the
+  first ciphertext blocks of two entries with the same bytes: equal under upstream's writer, the
+  control, and different under the patched one.
+- **The patched class is renamed** `SealedSevenZOutputFile`, in the same package. Under its upstream
+  name it would be a second `SevenZOutputFile` beside the library's own, which Android's dexer
+  refuses as a duplicate class and the desktop resolves by classpath order.
+- **The password:** the writer's copy is cleared once the header is sealed; the reader's copy once the
+  archive is open.
+- **The seekable target:** `BackupWriter` writes to a temporary file, reads every entry back
+  under the password, then hands the bytes to the backup folder, whose write replaces the old file
+  whole or not at all.
+- **Dependencies and licences**, as resolved for `:data` (`./gradlew :data:dependencies`):
+
+| Library | Version | Licence | Why |
+|---|---|---|---|
+| `org.apache.commons:commons-compress` | 1.28.0 | Apache-2.0 | the 7z reader and writer |
+| `org.tukaani:xz` | 1.10 | 0BSD | LZMA2, added explicitly (optional in Commons Compress's POM) |
+| `commons-io:commons-io` | 2.20.0 | Apache-2.0 | transitive |
+| `org.apache.commons:commons-lang3` | 3.18.0 | Apache-2.0 | transitive |
+| `commons-codec:commons-codec` | 1.19.0 | Apache-2.0 | transitive |
+
+  Apache-2.0 and 0BSD both combine with GPL-3.0. The Apache libraries ship a `NOTICE` file, which the
+  app's licence screen must reproduce when it is built.
+- **R8:** not checked. The Android app does not minify yet (no `isMinifyEnabled`), so no keep rules
+  were added. Commons Compress finds its coders through a static table, not by reflection, but it
+  names optional libraries (Brotli, Zstandard, ASM, OSGi) that are absent: a minified build will need
+  `-dontwarn` rules for them, and a check that a backup still writes and reads.
+- **The reader's interface** gains `readEach`, every entry in one opening of the archive (section 5).
+
 ## 5. The interface for Task 12
 
 ```kotlin
@@ -78,6 +112,10 @@ interface ArchiveReader {
     fun read(source: java.io.File, password: CharArray, name: String): ByteArray?
 }
 ```
+
+Added in Task 12: `readEach(source, password, block: (name, bytes?) -> Unit): Boolean`, every entry in
+one opening, a damaged entry read as null; `read` per entry opens the archive and derives the header's
+key each time. Implemented once, in `data/src/jvmCommon/.../data/backup/SevenZip.kt`.
 
 ## 6. Ruled out
 
