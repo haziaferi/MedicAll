@@ -26,8 +26,8 @@ sealed interface BackupResult {
  * way, an unreachable folder or a full disk among them, is returned as [BackupResult.Failed], never
  * thrown, and leaves the previous backup as it was.
  *
- * A file whose copy here is damaged is left out of the backup; the integrity check that runs before
- * each write (SPEC:R23) repairs it first.
+ * A file whose copy here is damaged is left out of the backup; [IntegrityCheck], run before each
+ * write (SPEC:R23), repairs it first.
  */
 class BackupWriter(
     private val db: MedicAllDatabase,
