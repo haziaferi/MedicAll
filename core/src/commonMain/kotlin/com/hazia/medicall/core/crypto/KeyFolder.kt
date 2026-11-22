@@ -49,9 +49,11 @@ sealed interface Unlock {
  * made with the same passphrase opens with the next [unlock], in memory, and is written into the chain at
  * the next [change] or [fold]; one made with another passphrase waits until [fold] is given that passphrase.
  *
- * Trust: anyone who can write the sync folder can plant files here. They cannot read anything, and an
- * unlock derives at most [MAX_RETIRED_TRIES] retired files, so planted files can slow an unlock but not
- * stop it; [fold], which the person starts, tries every retired file.
+ * Trust (as for sync, SPEC:R16, the folder belongs to the person's own devices): anyone who can write the
+ * sync folder can plant files here. They cannot read anything. Planted retired files can slow an unlock,
+ * which derives at most [MAX_RETIRED_TRIES] of them, and slow [fold], which tries every one. A planted key
+ * file with a lower key id wins [settleConflicts], so every device then gets [Unlock.WrongPassphrase]: the
+ * real key file is kept in `keys/retired/`, but no call restores it yet. This is an accepted limit.
  *
  * The caller owns the passphrase arrays and should clear them after use.
  */
