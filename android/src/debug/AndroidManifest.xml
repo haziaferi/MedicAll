@@ -1,14 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug builds only: a documents provider over app-private files, so the instrumented tests can open a
-     Storage Access Framework tree without the system picker. It lists no roots, so no picker shows it, and
-     MANAGE_DOCUMENTS (a system permission) keeps every other app out. -->
+<!-- Debug builds only. Neither component reaches a release. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <!-- A documents provider over app-private files, so the instrumented tests can open a Storage Access
+             Framework tree without the system picker. It lists no roots, so no picker shows it, and
+             MANAGE_DOCUMENTS (a system permission) keeps every other app out. -->
         <provider
             android:name=".StubDocumentsProvider"
             android:authorities="com.hazia.medicall.stubdocs"
             android:exported="true"
             android:grantUriPermissions="true"
             android:permission="android.permission.MANAGE_DOCUMENTS" />
+
+        <!-- The phase 1 harness (SPEC:R100): the debug build's launcher, so the two-phone walk starts it from
+             the home screen. -->
+        <activity
+            android:name=".HarnessActivity"
+            android:exported="true"
+            android:label="MedicAll harness">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
