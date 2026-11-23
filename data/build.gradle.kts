@@ -17,6 +17,7 @@ kotlin {
         compileSdk = libs.versions.compileSdk.get().toInt()
         minSdk = libs.versions.minSdk.get().toInt()
         withHostTest {}
+        withJava()
     }
 
     jvm("desktop")
@@ -24,7 +25,10 @@ kotlin {
     applyDefaultHierarchyTemplate()
 
     sourceSets {
-        val jvmCommon = create("jvmCommon") { dependsOn(commonMain.get()) }
+        val jvmCommon = create("jvmCommon") {
+            dependsOn(commonMain.get())
+            kotlin.srcDir("src/jvmCommon/java")
+        }
         androidMain { dependsOn(jvmCommon) }
         getByName("desktopMain") { dependsOn(jvmCommon) }
 
@@ -36,6 +40,11 @@ kotlin {
             implementation(libs.kotlinx.coroutines.core)
             // The element API only, so no serialization compiler plugin.
             implementation(libs.kotlinx.serialization.json)
+        }
+        jvmCommon.dependencies {
+            // SPEC:R112 backups (docs/decisions/2026-11-22-7zip-library.md); xz is its LZMA2.
+            implementation(libs.commons.compress)
+            implementation(libs.xz)
         }
         androidMain.dependencies {
             implementation(libs.androidx.sqlite.framework)
@@ -64,6 +73,12 @@ dependencies {
 // One database, one schema file per version, committed: a migration needs the previous version's file.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
+}
+
+// The patched 7z writer (SealedSevenZOutputFile, SPEC:R112) is Java shared by both targets: the Kotlin
+// compilers see it through jvmCommon's source root, and each target's javac compiles it.
+tasks.withType<JavaCompile>().matching { it.name == "compileDesktopMainJava" || it.name == "compileAndroidMainJavaWithJavac" }.configureEach {
+    source("src/jvmCommon/java")
 }
 
 // Both targets write the same schema file; running them in parallel races on it.

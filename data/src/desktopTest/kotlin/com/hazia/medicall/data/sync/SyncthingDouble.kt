@@ -65,7 +65,8 @@ class SyncthingDouble(private val random: Random) {
     }
 
     private fun conflictName(path: String, loser: Version): String {
-        val dot = path.lastIndexOf('.')
+        // A name with no extension, as `blobs/<sha256>`, takes the mark at its end, as Syncthing does.
+        val dot = path.lastIndexOf('.').takeIf { it > path.lastIndexOf('/') } ?: path.length
         return path.substring(0, dot) + ".sync-conflict-${loser.mtime}-${loser.by}" + path.substring(dot)
     }
 

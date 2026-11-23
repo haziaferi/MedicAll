@@ -17,6 +17,10 @@ sqlcipher = "4.19.1"
 androidxTestExtJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
 androidxTestCore = "1.6.1"
+# SPEC:R112 backups: 7z with AES-256 and a sealed header (docs/decisions/2026-11-22-7zip-library.md).
+commonsCompress = "1.28.0"
+# LZMA2 for Commons Compress's 7z writer.
+xz = "1.10"
 
 [libraries]
 sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
@@ -34,6 +38,8 @@ androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", 
 androidx-sqlite-framework = { group = "androidx.sqlite", name = "sqlite-framework", version.ref = "sqlite" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
+xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
