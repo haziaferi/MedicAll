@@ -133,9 +133,15 @@ class MedicAllCore private constructor(
     /** Empties the bin for good; refuses unless [confirmation] is "DELETE" ([Bin.empty], SPEC:R19). */
     suspend fun emptyBin(confirmation: String) = bin.empty(confirmation)
 
+    /** Deletes for good what has been in the bin longer than 30 days ([Bin.purgeExpired], SPEC:R18); [syncNow] runs it. */
+    suspend fun purgeExpired() = bin.purgeExpired()
+
     /**
      * Settles key-file conflict copies ([KeyFolder.settleConflicts], SPEC:R16), publishes files and writes
-     * the logs, then reads the peers' logs and fetches their files. The report says when the key folder
+     * the logs, reads the peers' logs, purges what has been in the bin over 30 days ([purgeExpired],
+     * SPEC:R18), then fetches the peers' files and starts the collection of the purged ones' copies. The
+     * purge runs after the import, so a restore from the bin a peer made is merged before anything is
+     * purged here; the purge travels with this device's next export. The report says when the key folder
      * has moved past this cipher, so the shell unlocks again ([SyncReport.unlockAgain]); the sync goes on
      * meanwhile, since every key this device sealed under stays in the folder, retired or current.
      */
@@ -144,7 +150,10 @@ class MedicAllCore private constructor(
         val unlockAgain = lost || keysMovedOn()
         blobSync.exchange()
         sync.export()
-        return SyncReport(sync.import().also { blobSync.exchange() }, unlockAgain)
+        val imported = sync.import()
+        purgeExpired()
+        blobSync.exchange()
+        return SyncReport(imported, unlockAgain)
     }
 
     /** True when the folder's key is not this cipher's, or a key retired since this cipher was built is one it lacks. */

@@ -210,9 +210,9 @@ class HarnessActivity : Activity() {
      */
     private fun unlock(phrase: CharArray, typedNow: Boolean) {
         val outcome = runCatching {
-            val folder = syncFolder()
-            check(folder.reachable()) { "The sync folder cannot be reached." }
             val device = deviceId(File(filesDir, DEVICE_FILE))
+            val folder = syncFolder(device)
+            check(folder.reachable()) { "The sync folder cannot be reached." }
             val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, phrase, device)) {
                 is Unlock.Unlocked -> u.cipher
                 Unlock.KeyFileNotArrived -> error("Another device's key file has not arrived yet: wait for the sync and try again.")
@@ -294,7 +294,7 @@ class HarnessActivity : Activity() {
 
     private fun secret(): CharArray = passphrase ?: error("Set the passphrase first.")
 
-    private fun syncFolder() = SafSyncFolder(this, tree(KEY_SYNC) ?: error("Pick the sync folder first."))
+    private fun syncFolder(device: String) = SafSyncFolder(this, tree(KEY_SYNC) ?: error("Pick the sync folder first."), device)
 
     private fun backupTarget() = SafBackupTarget(this, tree(KEY_BACKUP) ?: error("Pick the backup folder first."))
 

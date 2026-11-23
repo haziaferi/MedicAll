@@ -1,5 +1,6 @@
 package com.hazia.medicall.data
 
+import com.hazia.medicall.core.crypto.KeyFolder
 import com.hazia.medicall.core.crypto.Unlock
 import com.hazia.medicall.data.backup.BackupResult
 import com.hazia.medicall.data.backup.BackupWriter
@@ -38,6 +39,8 @@ class MedicAllCoreTest {
     @After fun close() = opened.forEach { it.close() }
 
     private val passphrase = "invented-walk-passphrase".toCharArray()
+    private val DAY = 86_400_000L
+    private val HOUR = 3_600_000L
     private val testFile = "An invented test file, no real data".encodeToByteArray()
 
     private val syncRoot by lazy { tmp.newFolder("sync").toPath() }
@@ -48,14 +51,19 @@ class MedicAllCoreTest {
     private fun device(name: String): MedicAllCore = Phone(name, DirectorySyncFolder(syncRoot)).unlock()
 
     /** A device's database and stored files, kept across [unlock]s, as a shell keeps them when it unlocks again. */
-    private inner class Phone(val name: String, val folder: SyncFolder) {
-        private val dir = tmp.newFolder(name)
+    private inner class Phone(
+        val name: String,
+        val folder: SyncFolder,
+        dirName: String = name,
+        private val wall: () -> Long = System::currentTimeMillis,
+    ) {
+        private val dir = tmp.newFolder(dirName)
         private val db = openMedicAllDatabase(File(dir, "medicall.db")).database.also { opened += it }
 
         /** Unlocks (or makes) the key file with the passphrase and builds the core over this device's database. */
         fun unlock(): MedicAllCore = runBlocking {
             val unlocked = assertIs<Unlock.Unlocked>(MedicAllCore.unlockOrCreate(folder, passphrase, name))
-            MedicAllCore.open(db, folder, name, unlocked.cipher, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), zone = ZoneOffset.UTC)
+            MedicAllCore.open(db, folder, name, unlocked.cipher, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), wall, ZoneOffset.UTC)
         }
     }
 
@@ -86,15 +94,23 @@ class MedicAllCoreTest {
         Files.copy(renamed.resolve("keys/keyinfo.json"), into.resolve("keys/keyinfo.sync-conflict-20261123-120000-ABCDEFG.json"))
     }
 
-    // SPEC:R16, SPEC:R109 two devices that each made a key apart, with one passphrase, settle the clash and read each other.
+    // SPEC:R16, SPEC:R109 two devices that each made a key apart, with one passphrase, settle the clash and read
+    // each other: once with A's key file kept by Syncthing and B's renamed, once the other way round.
     @Test
-    fun keyFilesMadeApartAreSettled_SPEC_R16() = runBlocking {
-        val folderA = MovableFolder(tmp.newFolder("syncA").toPath())
-        val folderB = MovableFolder(tmp.newFolder("syncB").toPath())
-        val phoneA = Phone("A", folderA)
-        val phoneB = Phone("B", folderB)
+    fun keyFilesMadeApartAreSettled_SPEC_R16() {
+        settleClash(round = 1, keptIsA = true)
+        settleClash(round = 2, keptIsA = false)
+    }
+
+    private fun settleClash(round: Int, keptIsA: Boolean) = runBlocking {
+        val folderA = MovableFolder(tmp.newFolder("syncA$round").toPath())
+        val folderB = MovableFolder(tmp.newFolder("syncB$round").toPath())
+        val phoneA = Phone("A", folderA, "A$round")
+        val phoneB = Phone("B", folderB, "B$round")
         var a = phoneA.unlock()
         var b = phoneB.unlock()
+        val keyA = assertNotNull(KeyFolder(folderA).currentKeyId())
+        val keyB = assertNotNull(KeyFolder(folderB).currentKeyId())
         val fileA = "An invented test file from A".encodeToByteArray()
         val fileB = "An invented test file from B, longer".encodeToByteArray()
         val profileA = a.addProfile("Profile A")
@@ -104,26 +120,68 @@ class MedicAllCoreTest {
         a.syncNow()
         b.syncNow()
 
-        val shared = tmp.newFolder("shared").toPath()
-        meet(kept = folderA.root, renamed = folderB.root, into = shared)
+        val shared = tmp.newFolder("shared$round").toPath()
+        if (keptIsA) meet(kept = folderA.root, renamed = folderB.root, into = shared)
+        else meet(kept = folderB.root, renamed = folderA.root, into = shared)
         folderA.root = shared
         folderB.root = shared
-        assertTrue(a.syncNow().unlockAgain, "A's cipher misses a key the folder now holds")
-        assertTrue(b.syncNow().unlockAgain, "B's cipher misses a key the folder now holds")
-        assertEquals(listOf("keyinfo.json", "retired"), DirectorySyncFolder(shared).list("keys").sorted(), "the conflict copy is settled")
+        val what = "round $round, ${if (keptIsA) "A's" else "B's"} key file kept, ${if (keyA < keyB) "A's" else "B's"} key id lower"
+        assertTrue(a.syncNow().unlockAgain, "A's cipher misses a key the folder now holds; $what")
+        assertTrue(b.syncNow().unlockAgain, "B's cipher misses a key the folder now holds; $what")
+        assertEquals(listOf("keyinfo.json", "retired"), DirectorySyncFolder(shared).list("keys").sorted(), "the conflict copy is settled; $what")
+        assertEquals(minOf(keyA, keyB), KeyFolder(DirectorySyncFolder(shared)).currentKeyId(), "the lower key id wins; $what")
+        assertEquals(setOf(maxOf(keyA, keyB)), KeyFolder(DirectorySyncFolder(shared)).retiredKeyIds(), "the other is retired; $what")
 
         a = phoneA.unlock()
         b = phoneB.unlock()
         repeat(2) {
-            assertFalse(a.syncNow().unlockAgain)
-            assertFalse(b.syncNow().unlockAgain)
+            assertFalse(a.syncNow().unlockAgain, what)
+            assertFalse(b.syncNow().unlockAgain, what)
         }
         val expected = listOf(profileA to "Profile A", profileB to "Profile B")
         for ((name, core) in listOf("A" to a, "B" to b)) {
-            assertEquals(expected, core.profiles().map { it.id to it.name }, name)
-            assertContentEquals(fileA, core.readFile(refA), name)
-            assertContentEquals(fileB, core.readFile(refB), name)
+            assertEquals(expected, core.profiles().map { it.id to it.name }, "$name; $what")
+            assertContentEquals(fileA, core.readFile(refA), "$name; $what")
+            assertContentEquals(fileB, core.readFile(refB), "$name; $what")
         }
+    }
+
+    // SPEC:R18 the bin's 30 days run out at a sync: on day 29 the profile is still in the bin, past day 30 it is
+    // purged at A's sync, and the purge reaches B before B's own clock would purge it. B's wall clock runs 13 hours
+    // behind A's, so on A's day 30.5 B is on day 29.96: only the purge A exported can take it there. (A
+    // larger lag is held by LineGuard, more than a day ahead, so day 31 on A cannot tell travel from B's own purge.)
+    @Test
+    fun binExpiresAtSync_SPEC_R18() = runBlocking {
+        val start = 1_800_000_000_000L
+        var now = start
+        val lag = 13 * HOUR
+        val a = Phone("A", DirectorySyncFolder(syncRoot), wall = { now }).unlock()
+        val b = Phone("B", DirectorySyncFolder(syncRoot), wall = { now - lag }).unlock()
+        val profile = a.addProfile("Profile A")
+        a.syncNow()
+        b.syncNow()
+        a.remove(PROFILE, profile)
+        a.syncNow()
+        b.syncNow()
+        assertEquals(listOf(profile), b.binContents().map { it.id }, "the removal reached B")
+
+        now = start + 29 * DAY
+        a.syncNow()
+        b.syncNow()
+        assertEquals(listOf(profile), a.profiles().map { it.id }, "day 29: still in A's bin")
+        assertEquals(listOf(profile), b.profiles().map { it.id }, "day 29: still in B's bin")
+
+        now = start + 30 * DAY + 12 * HOUR
+        a.syncNow()
+        assertTrue(a.profiles().isEmpty(), "day 30.5: purged on A")
+        a.syncNow() // the purge travels with A's next export
+        b.syncNow()
+        assertTrue(b.profiles().isEmpty(), "B, on day 29.96 by its own clock, has A's purge")
+
+        now = start + 31 * DAY
+        a.syncNow()
+        b.syncNow()
+        assertTrue(a.profiles().isEmpty() && b.profiles().isEmpty() && a.binContents().isEmpty() && b.binContents().isEmpty(), "day 31: gone everywhere")
     }
 
     // SPEC:R109 a device that finds another device's directory but no key file makes no key of its own.
