@@ -253,7 +253,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R07 · How changes land
 
-**Rule:** Every change reaches `main` through a pull request that the owner merges, by the method its row gives. CI runs the full gate on each pull request, `main` is protected with linear history, and no version tag is made before the first release.
+**Rule:** Every change reaches `main` through a pull request that the owner merges, by the method its row gives. CI runs the full gate on each pull request, `main`'s ruleset blocks direct pushes, force pushes and deletion, and no version tag is made before the first release.
 
 **Values:**
 
@@ -261,9 +261,11 @@ People who live with several conditions keep medicines, appointments, lab report
 |---|---|
 | A feature or a fix | squash, the default |
 | Commits deliberately kept clean and self-contained | rebase and merge |
-| Syncing branches, never feature work | merge commit, only between branches other than `main` |
+| Syncing branches, never feature work | merge commit |
 
-**Acceptance:** Branch protection on `main` requires a pull request and the CI check. The README states this as its "How changes land" section, and each pull request's description names its method.
+**Evidence:** `main`'s ruleset (id 27129248), read 2026-11-23: deletion and non-fast-forward blocked, pull request required (merge, squash and rebase allowed), code scanning required. No linear-history rule, and no required status check.
+
+**Acceptance:** `main`'s ruleset requires a pull request and blocks force pushes and deletion. The README states this as its "How changes land" section, and each pull request's description names its method.
 
 **Since:** 2026-11-23 · owner · agreed rewording
 
@@ -1548,7 +1550,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R04 · Stack: The shared module compiles for the Android and the JVM desktop targets.
 - R05 · Identity and licence: The manifest's `applicationId` is `com.hazia.medicall` and the repository root holds the GPL-3.0 `LICENSE`.
 - R06 · Public repository, private data: The publish check passes on every push, and a search of the tracked files finds none of the owner's medicine names or file names.
-- R07 · How changes land: Branch protection on `main` requires a pull request and the CI check. The README states this as its "How changes land" section, and each pull request's description names its method.
+- R07 · How changes land: `main`'s ruleset requires a pull request and blocks force pushes and deletion. The README states this as its "How changes land" section, and each pull request's description names its method.
 - R08 · Languages: With the phone set to Italian once Italian ships, every string is Italian; with it set to English, no Italian bureaucracy label appears.
 - R09 · Test devices: Each phase's walk record names all three phones.
 - R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.

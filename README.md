@@ -10,7 +10,7 @@ Phase 1 is built: the data layer, encryption, sync and backups, with a debug-onl
 
 ## How changes land
 
-Every change reaches `main` through a pull request that the owner merges; CI runs the full gate on each pull request, `main` is protected with linear history, and no version tag is made before the first release (`SPEC.md`, R07).
+Every change reaches `main` through a pull request that the owner merges. CI runs the full gate on each pull request, and `main`'s ruleset blocks direct pushes, force pushes and deletion. No version tag is made before the first release (`SPEC.md`, R07).
 
 Pick the merge method per pull request:
 
@@ -18,7 +18,7 @@ Pick the merge method per pull request:
 |---|---|
 | A feature or a fix | **Squash**, the default: one commit on `main` |
 | Commits deliberately kept clean and self-contained, each worth keeping on its own | **Rebase and merge** |
-| Syncing one branch with another, never feature work | **Merge commit**. `main` requires linear history, so this applies only between other branches |
+| Syncing one branch with another, never feature work | **Merge commit** |
 
 Whoever opens a pull request names the method it expects in the description.
 

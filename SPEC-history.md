@@ -131,3 +131,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-23 · R11 · changed · app lock optional; the PIN encrypts nothing · owner
 - 2026-11-23 · R22 · changed · records as standard CSV, comma, UTF-8, no BOM · owner
 - 2026-11-23 · R07 · changed · merge method per PR: squash by default, rebase for clean commits, merge commits only to sync branches · owner
+- 2026-11-23 · R07 · changed · no linear-history rule on main, as the ruleset has it; merge commits not limited to other branches · owner
