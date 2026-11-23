@@ -299,25 +299,27 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R109 · One passphrase for devices, sync and backups
 
-**Rule:** One passphrase, chosen by the person, protects the database on every device that syncs, the sync logs and the backups. It is entered once per device and kept in the key store, so sync and the restore of R23 never ask again. The person can change it; each other device then asks for the new one once.
+**Rule:** One passphrase, chosen by the person, protects the database on every device that syncs, the sync logs and the backups; it is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
 
-**Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time.
+**Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time; a stable passphrase keeps every backup usable for repair (R23), and day-to-day access is the app lock's job (R11).
 
-**Acceptance:** A backup opens by hand with the passphrase; after a change, the next backup opens only with the new one, and a second device asks once for it.
+**Acceptance:** A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 
 **Not:** Separate passphrases for sync and backups.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-23 · owner · agreed rewording
 
 ### D-R11 · App lock
 
-**Rule:** One app lock guards every profile on the device.
+**Rule:** An optional app lock, a PIN with an optional fingerprint, guards every profile on the device. The PIN is a second layer for privacy on this device only: it encrypts nothing and can be changed at any time with no effect on sync, backups or other devices.
 
-**Evidence:** Not checked: the lock's method. The builder's default is a PIN with an optional fingerprint, as in Lunar.
+**Why:** The passphrase protects the data and rarely changes (R109); the PIN is the everyday gate, so it can be short and changed freely.
 
-**Acceptance:** With the lock on, no profile's data is visible after the app returns from the background past its timeout.
+**Acceptance:** With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Not:** A PIN that encrypts the data: a 4–6 digit secret would be weak against someone who copies the sync folder or a backup.
+
+**Since:** 2026-11-23 · owner · agreed rewording
 
 ### D-R12 · Network use
 
@@ -457,14 +459,14 @@ People who live with several conditions keep medicines, appointments, lab report
 | Inside each backup | Form |
 |---|---|
 | Attachments | the files, under readable names |
-| Records | CSV and JSON |
+| Records | standard CSV (comma-separated, UTF-8, no byte-order mark) and JSON |
 | Instructions | a plain text file on how to open the archive |
 
 **Acceptance:** A backup opens in 7-Zip with the passphrase, its file list is hidden without it, and the CSV holds every result line.
 
 **Not:** An encrypted ZIP: ZIP shows the file names inside without the password.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-23 · owner · agreed rewording
 
 ### D-R112 · 7-Zip writer
 
@@ -1542,8 +1544,8 @@ People who live with several conditions keep medicines, appointments, lab report
 - R08 · Languages: With the phone set to Italian once Italian ships, every string is Italian; with it set to English, no Italian bureaucracy label appears.
 - R09 · Test devices: Each phase's walk record names all three phones.
 - R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
-- R109 · One passphrase for devices, sync and backups: A backup opens by hand with the passphrase; after a change, the next backup opens only with the new one, and a second device asks once for it.
-- R11 · App lock: With the lock on, no profile's data is visible after the app returns from the background past its timeout.
+- R109 · One passphrase for devices, sync and backups: A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
+- R11 · App lock: With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 - R12 · Network use: The only network call site in the code is the medicine-list download, and it sends no profile data.
 - R13 · Lock-screen privacy of notifications: On a locked phone, each notification of R73 shows no medicine, analyte, test or condition name.
 - R14 · Profiles: Two profiles on one device keep separate records, and switching a module off for one leaves the other unchanged.
