@@ -74,6 +74,8 @@ class HarnessActivity : Activity() {
         passphraseField = EditText(this).apply {
             hint = "Passphrase (at least $MIN_PASSPHRASE characters)"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            // The walk's test passphrase is no account: keep the phone's password manager away from it.
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
         }.also(column::addView)
         textField = EditText(this).apply {
             hint = "Name, or DELETE to empty the bin"
@@ -167,6 +169,13 @@ class HarnessActivity : Activity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
+        )
+        // The walk's folders (Task 16). Opening the picker there leaves only its buttons to press:
+        // DocumentsUI ignores adb-injected taps on its folder rows (seen on the 6T, Android 11).
+        val folder = if (code == PICK_SYNC) "Documents/MedicAll-test" else "Documents/MedicAll-backup-test"
+        intent.putExtra(
+            android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+            Uri.parse("content://com.android.externalstorage.documents/document/primary%3A" + Uri.encode(folder)),
         )
         @Suppress("DEPRECATION")
         startActivityForResult(intent, code)
