@@ -192,6 +192,10 @@ class MedicAllCore private constructor(
          * This device's database key (SPEC:R10), derived from [passphrase] ([KeyDerivation]) with a salt
          * made from [device], so each device's database has its own key and no salt needs storing apart.
          * The shell keeps it in the platform's key store, so a restart does not ask for the passphrase.
+         *
+         * A builder's call, accepted at the Task 16 review: the plan does not say how the database key relates
+         * to the key file, and the sync key cannot leave [LineCipher], so the database key is its own PBKDF2
+         * derivation, salted per device. It is deterministic, so a key store that lost its key derives it again.
          */
         fun databaseKey(passphrase: CharArray, device: String): ByteArray =
             KeyDerivation.derive(passphrase, sha256("medicall-database-key|$device".encodeToByteArray()).copyOf(16))

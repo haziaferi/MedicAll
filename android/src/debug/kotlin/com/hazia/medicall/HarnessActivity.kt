@@ -33,8 +33,8 @@ import java.util.concurrent.Executors
  *
  * The folders are picked through the Storage Access Framework with persistable read and write grants,
  * and remembered across starts. The passphrase unlocks (or makes) the key file in the sync folder; the
- * database key derived from it is kept by [KeyVault]. The passphrase itself stays in memory only, for
- * the backups it seals, so after a restart "Set passphrase" is pressed again to unlock sync.
+ * database key derived from it, and the passphrase itself, are kept sealed by [KeyVault] (SPEC:R109), so
+ * on the next start the harness unlocks sync, the database and the backups without asking.
  *
  * "Edit name", "Edit kind", "Add test file" and "Remove" act on the first live profile by name;
  * "Restore" on the profile most recently put in the bin. The text field gives "Add test profile" and
@@ -139,7 +139,7 @@ class HarnessActivity : Activity() {
             addView(column)
         })
         show()
-        worker.execute { refresh() }
+        worker.execute { unlockFromVault(); refresh() }
     }
 
     override fun onDestroy() {
@@ -160,7 +160,7 @@ class HarnessActivity : Activity() {
         val key = if (requestCode == PICK_SYNC) KEY_SYNC else KEY_BACKUP
         prefs.edit().putString(key, uri.toString()).apply()
         message(if (requestCode == PICK_SYNC) "Sync folder picked." else "Backup folder picked.")
-        worker.execute { refresh() }
+        worker.execute { unlockFromVault(); refresh() }
     }
 
     private fun pick(code: Int) {
@@ -172,39 +172,53 @@ class HarnessActivity : Activity() {
         startActivityForResult(intent, code)
     }
 
-    /** Unlocks (or makes) the key file, then opens the database with the vault's key and builds the core. */
+    /** Unlocks with the typed passphrase, which the vault then keeps sealed (SPEC:R109). */
     private fun setPassphrase() {
         val typed = CharArray(passphraseField.length()) { passphraseField.text[it] }
         passphraseField.text.clear()
         if (typed.size < MIN_PASSPHRASE) return message("The passphrase needs at least $MIN_PASSPHRASE characters.")
-        worker.execute {
-            val outcome = runCatching {
-                val folder = syncFolder()
-                check(folder.reachable()) { "The sync folder cannot be reached." }
-                val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, typed)) {
-                    is Unlock.Unlocked -> u.cipher
-                    else -> error("The key file did not unlock: $u")
-                }
-                val device = deviceId(File(filesDir, DEVICE_FILE))
-                val vault = KeyVault(this)
-                val key = vault.load() ?: MedicAllCore.databaseKey(typed, device).also(vault::store)
-                val open = openEncryptedDatabase(this, key)
-                db?.close()
-                db = open.database
-                core = runBlocking {
-                    MedicAllCore.open(
-                        open.database, folder, device, cipher, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
-                        recovered = open.recovered,
-                    )
-                }
-                passphrase?.fill(' ')
-                passphrase = typed
-                "Unlocked as device $device" + if (open.recovered) " (an unopenable database was set aside)" else ""
+        worker.execute { unlock(typed, typedNow = true); refresh() }
+    }
+
+    /** On start: unlocks with the passphrase the vault keeps, when there is one and the sync folder is picked. Worker thread. */
+    private fun unlockFromVault() {
+        if (core != null || prefs.getString(KEY_SYNC, null) == null) return
+        val kept = KeyVault(this).loadPassphrase() ?: return
+        unlock(kept, typedNow = false)
+    }
+
+    /**
+     * Unlocks (or makes) the key file with [phrase], then opens the database with the vault's key and builds
+     * the core; a [typedNow] passphrase that unlocked is sealed in the vault. Worker thread.
+     */
+    private fun unlock(phrase: CharArray, typedNow: Boolean) {
+        val outcome = runCatching {
+            val folder = syncFolder()
+            check(folder.reachable()) { "The sync folder cannot be reached." }
+            val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, phrase)) {
+                is Unlock.Unlocked -> u.cipher
+                else -> error("The key file did not unlock: $u")
             }
-            ui { lastMessage = outcome.getOrElse { "Set passphrase failed: ${it.message ?: it}" } }
-            if (outcome.isFailure) typed.fill(' ')
-            refresh()
+            val device = deviceId(File(filesDir, DEVICE_FILE))
+            val vault = KeyVault(this)
+            if (typedNow) vault.storePassphrase(phrase)
+            val key = vault.load() ?: MedicAllCore.databaseKey(phrase, device).also(vault::store)
+            val open = openEncryptedDatabase(this, key)
+            db?.close()
+            db = open.database
+            core = runBlocking {
+                MedicAllCore.open(
+                    open.database, folder, device, cipher, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
+                    recovered = open.recovered,
+                )
+            }
+            passphrase?.fill(' ')
+            passphrase = phrase
+            (if (typedNow) "Unlocked" else "Unlocked with the kept passphrase") + " as device $device" +
+                if (open.recovered) " (an unopenable database was set aside)" else ""
         }
+        ui { lastMessage = outcome.getOrElse { "Unlock failed: ${it.message ?: it}" } }
+        if (outcome.isFailure) phrase.fill(' ')
     }
 
     /** Runs [action] on the core off the main thread, then shows its message, or why it failed. */
