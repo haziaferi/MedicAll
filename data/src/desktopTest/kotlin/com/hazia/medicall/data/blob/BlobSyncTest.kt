@@ -2,6 +2,7 @@ package com.hazia.medicall.data.blob
 
 import com.hazia.medicall.core.crypto.sha256
 import com.hazia.medicall.data.sync.World
+import com.hazia.medicall.data.sync.twoKeyCipher
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
@@ -114,6 +115,50 @@ class BlobSyncTest {
         assertNull(go { b.blobs.read(id) })
         settle(listOf(a, b))
         assertContentEquals(plain, go { b.blobs.read(id) })
+    }
+
+    // SPEC:R109, SPEC:R23 a copy sealed under a key this device does not hold yet is kept, not taken for damage.
+    @Test
+    fun copyUnderAKeyNotHeldYetIsKept_SPEC_R109() = two(6) { a, b ->
+        syncthing.now = day
+        val profile = a.create("Profile A")
+        settle(listOf(a, b))
+        val id = go { b.blobs.add(profile, "Lab 1.pdf", "application/pdf", plain) }
+        // The copy here sealed under k2, which B's cipher (k1 only) lacks: as after a key-file clash, before B unlocks again.
+        val underK2 = twoKeyCipher("k2").seal(plain).encodeToByteArray()
+        b.blobStore.write(hash, underK2)
+
+        assertNull(go { b.blobs.read(id) }, "it does not open here yet")
+        assertContentEquals(underK2, b.blobStore.read(hash), "read kept it")
+        b.export()
+        b.import()
+        assertContentEquals(underK2, b.blobStore.read(hash), "the exchange kept it")
+        assertFalse("blobs/$hash" in syncthing.paths("B"), "a copy this device cannot check is not published")
+
+        // Once the cipher holds k2, the same copy opens.
+        val later = Blobs(b.writes, b.db, b.blobStore, twoKeyCipher("k1"))
+        assertContentEquals(plain, go { later.read(id) })
+    }
+
+    // SPEC:R23 a copy altered under a key this device holds is still damage: dropped, and fetched again.
+    @Test
+    fun copyAlteredUnderAKnownKeyIsDropped_SPEC_R23() = two(7) { a, b ->
+        syncthing.now = day
+        val profile = a.create("Profile A")
+        val id = go { a.blobs.add(profile, "Lab 1.pdf", "application/pdf", plain) }
+        settle(listOf(a, b))
+        val good = assertNotNull(b.blobStore.read(hash)).decodeToString()
+
+        val i = good.length / 2
+        val altered = good.substring(0, i) + (if (good[i] == 'A') 'B' else 'A') + good.substring(i + 1)
+        val otherBytes = sealed("Other invented bytes").trimEnd()
+        for (damaged in listOf(altered, otherBytes)) {
+            b.blobStore.write(hash, damaged.encodeToByteArray())
+            assertNull(go { b.blobs.read(id) })
+            assertNull(b.blobStore.read(hash), "a copy that fails under k1, which B holds, is dropped")
+            settle(listOf(a, b))
+            assertContentEquals(plain, go { b.blobs.read(id) })
+        }
     }
 
     @Test

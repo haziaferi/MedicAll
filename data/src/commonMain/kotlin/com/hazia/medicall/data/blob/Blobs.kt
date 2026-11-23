@@ -60,7 +60,8 @@ class Blobs internal constructor(
     /**
      * The plain bytes of file reference [id], or null: no such reference, the bytes have not arrived
      * from the device that stored them, or the copy here does not open or opens to other bytes than
-     * its name (SPEC:R23). A damaged copy is dropped, so the next sync fetches it again.
+     * its name (SPEC:R23). A damaged copy is dropped, so the next sync fetches it again; one sealed
+     * under a key the cipher does not hold yet is kept ([verified]).
      */
     suspend fun read(id: String): ByteArray? {
         val ref = refs.blobRefs(listOf(id)).singleOrNull() ?: return null
@@ -97,10 +98,18 @@ internal fun sha256Hex(bytes: ByteArray): String =
 internal fun opened(cipher: LineCipher, sealed: ByteArray, name: String): ByteArray? =
     cipher.open(sealed.decodeToString())?.takeIf { sha256Hex(it) == name }
 
-/** [name]'s plain bytes in [store] when they open and match their name; a damaged copy is deleted. */
+/**
+ * [name]'s plain bytes in [store] when they open and match their name; null otherwise. A damaged copy
+ * is deleted: one that is no sealed line at all, or one sealed under a key [cipher] holds that still
+ * fails to open or to match. One sealed under a key [cipher] does not hold yet (a peer's key after a
+ * key-file clash, before this device unlocks again) is kept, as [FolderSync][com.hazia.medicall.data.sync.FolderSync]
+ * holds such a line (SPEC:R109).
+ */
 internal fun verified(store: BlobStore, cipher: LineCipher, name: String): ByteArray? {
     val sealed = store.read(name) ?: return null
     opened(cipher, sealed, name)?.let { return it }
-    store.delete(name)
+    val text = sealed.decodeToString()
+    val keyId = cipher.keyIdOf(text)
+    if (keyId == null || cipher.knows(keyId)) store.delete(name)
     return null
 }

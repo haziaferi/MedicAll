@@ -121,7 +121,15 @@ class HarnessActivity : Activity() {
             }
         }
         button(column, "Empty bin") { val typed = text(""); run("Empty bin") { it.emptyBin(typed); "the bin is empty" } }
-        button(column, "Sync now") { run("Sync now") { c -> c.syncNow().also { r -> ui { lastImport = "$r" } }; "synced" } }
+        button(column, "Sync now") {
+            run("Sync now") { c ->
+                val r = c.syncNow()
+                ui { lastImport = "$r" }
+                // The key folder moved past this cipher (a key-file clash settled): unlock again with the kept passphrase.
+                val again = if (r.unlockAgain) passphrase?.copyOf() else null
+                if (again == null) "synced" else { unlock(again, typedNow = false); "synced; the key folder changed, so it unlocked again" }
+            }
+        }
         button(column, "Back up now") {
             run("Back up now") { c -> c.backUp(backupTarget(), secret()).also { r -> ui { lastBackup = "$r" } }; "backup done" }
         }
@@ -204,11 +212,12 @@ class HarnessActivity : Activity() {
         val outcome = runCatching {
             val folder = syncFolder()
             check(folder.reachable()) { "The sync folder cannot be reached." }
-            val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, phrase)) {
+            val device = deviceId(File(filesDir, DEVICE_FILE))
+            val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, phrase, device)) {
                 is Unlock.Unlocked -> u.cipher
+                Unlock.KeyFileNotArrived -> error("Another device's key file has not arrived yet: wait for the sync and try again.")
                 else -> error("The key file did not unlock: $u")
             }
-            val device = deviceId(File(filesDir, DEVICE_FILE))
             val vault = KeyVault(this)
             if (typedNow) vault.storePassphrase(phrase)
             val key = vault.load() ?: MedicAllCore.databaseKey(phrase, device).also(vault::store)
@@ -258,7 +267,7 @@ class HarnessActivity : Activity() {
     }
 
     private fun show() {
-        statusView.text = "Last: $lastMessage\nImportReport: $lastImport\nBackupResult: $lastBackup\nRestoreReport: $lastRestore\nIntegrityReport: $lastIntegrity"
+        statusView.text = "Last: $lastMessage\nSyncReport: $lastImport\nBackupResult: $lastBackup\nRestoreReport: $lastRestore\nIntegrityReport: $lastIntegrity"
     }
 
     private fun ui(block: () -> Unit) = runOnUiThread {

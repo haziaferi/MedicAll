@@ -35,6 +35,13 @@ sealed interface Unlock {
 
     /** The key file itself cannot be read: it was altered, cut short or written by another format, so no passphrase opens it. */
     data object Damaged : Unlock
+
+    /**
+     * The folder has no key file yet, but another device already writes to it: its key file has not
+     * arrived. No key is made, so the device does not start a key of its own; wait for the sync and try
+     * again. [KeyFolder.unlock] never returns it: the caller that knows the device's id does.
+     */
+    data object KeyFileNotArrived : Unlock
 }
 
 /**
@@ -99,7 +106,7 @@ class KeyFolder internal constructor(
         val current = when (val u = unlock(old)) {
             is Unlock.Unlocked -> u.cipher
             Unlock.WrongPassphrase -> throw IllegalArgumentException("Wrong passphrase")
-            Unlock.NoKeyFile -> throw IllegalStateException("No key file")
+            Unlock.NoKeyFile, Unlock.KeyFileNotArrived -> throw IllegalStateException("No key file")
             Unlock.Damaged -> throw IllegalStateException("The key file is damaged")
         }
         return writeNew(new, previous = current.knownKeys())
@@ -132,6 +139,12 @@ class KeyFolder internal constructor(
         copies.forEach { files.delete("$DIR/$it") }
         return lost
     }
+
+    /** The id of the folder's key, or null when there is no key file or it does not parse. Needs no passphrase. */
+    fun currentKeyId(): String? = files.read(PATH)?.let(::parse)?.keyId
+
+    /** The ids of the readable retired key files, as [settleConflicts] keeps them. Needs no passphrase. */
+    fun retiredKeyIds(): Set<String> = retired().map { it.keyId }.toSet()
 
     /** The ids of retired keys that [passphrase]'s chain does not yet cover: what still waits for [fold]. Never throws on a bad file. */
     fun unfoldedKeyIds(passphrase: CharArray): List<String> {

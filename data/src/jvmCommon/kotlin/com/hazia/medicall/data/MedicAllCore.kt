@@ -23,6 +23,7 @@ import com.hazia.medicall.data.bin.BinEntry
 import com.hazia.medicall.data.blob.BlobStore
 import com.hazia.medicall.data.blob.BlobSync
 import com.hazia.medicall.data.blob.Blobs
+import com.hazia.medicall.data.sync.FolderLayout
 import com.hazia.medicall.data.sync.FolderSync
 import com.hazia.medicall.data.sync.ImportReport
 import com.hazia.medicall.data.sync.SyncFolder
@@ -32,6 +33,15 @@ import java.time.ZoneId
 
 /** A profile as [MedicAllCore.profiles] lists it; [removedAt] is set while it is in the bin. */
 data class ProfileInfo(val id: String, val name: String, val kind: String, val removedAt: Long?)
+
+/**
+ * What [MedicAllCore.syncNow] did: [imported] is the import's report. [unlockAgain] is true when the key
+ * folder changed under this device's cipher (a key-file clash settled against the key it holds, or a
+ * key it lacks retired beside the folder's): the shell must unlock again with the passphrase and
+ * build the core again ([MedicAllCore.unlockOrCreate], [MedicAllCore.open]), and until it does, lines
+ * sealed under the keys it lacks are held.
+ */
+data class SyncReport(val imported: ImportReport, val unlockAgain: Boolean)
 
 /** A file reference as [MedicAllCore.files] lists it; [removedAt] is set while it is in the bin. */
 data class FileInfo(val id: String, val profileId: String, val name: String, val sha256: String, val removedAt: Long?)
@@ -43,8 +53,8 @@ data class FileInfo(val id: String, val profileId: String, val name: String, val
  * first shell, and tests build it the same way. It adds no rule of its own: each call goes to the class
  * that holds the rule.
  *
- * - [syncNow] publishes the files the logs will name, writes the logs, then reads the peers' logs and
- *   fetches the files they name ([BlobSync], [FolderSync]).
+ * - [syncNow] settles key-file clashes ([KeyFolder.settleConflicts]), publishes the files the logs will
+ *   name, writes the logs, then reads the peers' logs and fetches the files they name ([BlobSync], [FolderSync]).
  * - The backup calls take the backup folder each time, since a shell may pick it after this is built,
  *   and the passphrase, which seals the backups (SPEC:R109).
  *
@@ -55,13 +65,17 @@ class MedicAllCore private constructor(
     folder: SyncFolder,
     device: String,
     clock: HybridClock,
-    cipher: LineCipher,
+    private val cipher: LineCipher,
     blobStore: BlobStore,
     private val wallMillis: () -> Long,
     private val workDir: File,
     private val zone: ZoneId,
     recovered: Boolean,
 ) {
+    private val keys = KeyFolder(folder)
+
+    /** Retired keys this cipher already lacked when it was built: those [unlockOrCreate]'s passphrase did not open, so unlocking again would not help. */
+    private val retiredUnopened = keys.retiredKeyIds().filterNot(cipher::knows).toSet()
     private val writes = LocalWrites(db, clock)
     private val profiles = db.profileDao()
     private val refs = db.blobRefDao()
@@ -119,11 +133,25 @@ class MedicAllCore private constructor(
     /** Empties the bin for good; refuses unless [confirmation] is "DELETE" ([Bin.empty], SPEC:R19). */
     suspend fun emptyBin(confirmation: String) = bin.empty(confirmation)
 
-    /** Publishes files and writes the logs, then reads the peers' logs and fetches their files. */
-    suspend fun syncNow(): ImportReport {
+    /**
+     * Settles key-file conflict copies ([KeyFolder.settleConflicts], SPEC:R16), publishes files and writes
+     * the logs, then reads the peers' logs and fetches their files. The report says when the key folder
+     * has moved past this cipher, so the shell unlocks again ([SyncReport.unlockAgain]); the sync goes on
+     * meanwhile, since every key this device sealed under stays in the folder, retired or current.
+     */
+    suspend fun syncNow(): SyncReport {
+        val lost = keys.settleConflicts()
+        val unlockAgain = lost || keysMovedOn()
         blobSync.exchange()
         sync.export()
-        return sync.import().also { blobSync.exchange() }
+        return SyncReport(sync.import().also { blobSync.exchange() }, unlockAgain)
+    }
+
+    /** True when the folder's key is not this cipher's, or a key retired since this cipher was built is one it lacks. */
+    private fun keysMovedOn(): Boolean {
+        val current = keys.currentKeyId()
+        if (current != null && current != cipher.currentKeyId) return true
+        return keys.retiredKeyIds().any { !cipher.knows(it) && it !in retiredUnopened }
     }
 
     /** Writes a backup of [kind] to [target] under [passphrase] ([BackupWriter], SPEC:R22). */
@@ -178,12 +206,20 @@ class MedicAllCore private constructor(
 
         /**
          * The sync cipher for [passphrase] (SPEC:R109): the key file in [folder] unlocked, or, when the folder
-         * has none, made ([KeyFolder.create], which refuses a passphrase shorter than 12 characters).
+         * has none, made ([KeyFolder.create], which refuses a passphrase shorter than 12 characters). Key-file
+         * conflict copies are settled first (SPEC:R16), so the cipher holds every key the clash left.
+         *
+         * No key is made while `devices/` holds a directory other than [device]'s: another device already
+         * writes here, so its key file is on its way, and a second key would only clash with it. That gives
+         * [Unlock.KeyFileNotArrived]: wait for the sync and try again.
          */
-        fun unlockOrCreate(folder: SyncFolder, passphrase: CharArray): Unlock {
+        fun unlockOrCreate(folder: SyncFolder, passphrase: CharArray, device: String): Unlock {
             val keys = KeyFolder(folder)
+            keys.settleConflicts()
             return when (val u = keys.unlock(passphrase)) {
-                Unlock.NoKeyFile -> Unlock.Unlocked(keys.create(passphrase))
+                Unlock.NoKeyFile ->
+                    if (folder.list(FolderLayout.DEVICES).any { it != device }) Unlock.KeyFileNotArrived
+                    else Unlock.Unlocked(keys.create(passphrase))
                 else -> u
             }
         }
