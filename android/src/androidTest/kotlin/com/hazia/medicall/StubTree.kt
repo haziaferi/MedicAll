@@ -14,6 +14,7 @@ class StubTree(context: Context) {
 
     fun clean() {
         StubDocumentsProvider.revoked = false
+        StubDocumentsProvider.renameUnsupported = false
         dir.deleteRecursively()
     }
 }

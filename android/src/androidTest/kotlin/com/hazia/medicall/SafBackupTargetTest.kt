@@ -61,6 +61,16 @@ class SafBackupTargetTest {
         }
     }
 
+    /** Stops once the new target is in place and has read back whole, before the old copies are cleared. */
+    private class CrashLanded(private val name: String) : SafBackupTarget.Io() {
+        override fun landed(name: String) {
+            if (name == this.name) throw Crash()
+        }
+    }
+
+    private val tmpName = ".tmp-$name"
+    private val waiting get() = File(tree.dir, ".tmp-$name.old")
+
     /** Flips one byte of every copy it lands, as a failing card might. */
     private class Corrupting : SafBackupTarget.Io() {
         override fun copy(name: String, from: InputStream, to: OutputStream) {
@@ -131,12 +141,69 @@ class SafBackupTargetTest {
         assertEquals(listOf(name), onDisk())
         assertArrayEquals(source(3).readBytes(), bytes(target, name))
 
-        // Halfway through rewriting the target: the old copy is still whole under .prev.
-        crashes { SafBackupTarget(context, tree.uri, CrashWriting(name)).write(name, source(4)) }
+        // Halfway through the temporary copy: the target is untouched, and nothing torn shows.
+        crashes { SafBackupTarget(context, tree.uri, CrashWriting(tmpName)).write(name, source(4)) }
+        assertEquals(listOf(name), target.list())
+        assertArrayEquals(source(3).readBytes(), bytes(target, name))
+
+        // After the new copy was renamed into place and checked: it is the target, whole, with the old one as .prev.
+        crashes { SafBackupTarget(context, tree.uri, CrashLanded(name)).write(name, source(5)) }
+        assertEquals(listOf(name, prev), target.list().sorted())
+        assertArrayEquals(source(5).readBytes(), bytes(target, name))
         assertArrayEquals(source(3).readBytes(), bytes(target, prev))
+        target.write(name, source(6))
+        assertEquals(listOf(name), onDisk())
+        assertArrayEquals(source(6).readBytes(), bytes(target, name))
+    }
+
+    @Test
+    fun crashAfterTheCheckKeepsTheGoodTarget_SPEC_R22() {
+        val target = SafBackupTarget(context, tree.uri)
+        target.write(name, source(1))
+        target.write(name, source(2), keepPrevious = true)
+
+        // v3 lands and reads back whole; the crash comes before v2, waiting aside, is cleared.
+        crashes { SafBackupTarget(context, tree.uri, CrashLanded(name)).write(name, source(3), keepPrevious = true) }
+        assertArrayEquals(source(2).readBytes(), waiting.readBytes())
+        assertArrayEquals(source(3).readBytes(), bytes(target, name))
+
+        // The next write finds v3 good by its recorded hash, so it moves it aside rather than deleting it.
+        crashes { SafBackupTarget(context, tree.uri, CrashAfterAside(name)).write(name, source(4), keepPrevious = true) }
+        assertArrayEquals("the good target waits aside", source(3).readBytes(), waiting.readBytes())
+        assertArrayEquals(source(1).readBytes(), bytes(target, prev))
+
         target.write(name, source(5))
         assertEquals(listOf(name), onDisk())
         assertArrayEquals(source(5).readBytes(), bytes(target, name))
+    }
+
+    @Test
+    fun renameUnsupportedFallsBackToACheckedCopy_SPEC_R22() {
+        StubDocumentsProvider.renameUnsupported = true
+        val target = SafBackupTarget(context, tree.uri)
+
+        target.write(name, source(1))
+        target.write(name, source(2), keepPrevious = true)
+        assertEquals(listOf(name, prev), onDisk())
+        assertArrayEquals(source(2).readBytes(), bytes(target, name))
+        assertArrayEquals(source(1).readBytes(), bytes(target, prev))
+        target.write(name, source(3))
+        assertEquals(listOf(name), onDisk())
+        assertArrayEquals(source(3).readBytes(), bytes(target, name))
+
+        // Without rename a crash can tear the copy under the real name; the old copy waits whole beside it.
+        target.write(name, source(4), keepPrevious = true)
+        crashes { SafBackupTarget(context, tree.uri, CrashWriting(name)).write(name, source(5), keepPrevious = true) }
+        assertArrayEquals(source(4).readBytes(), waiting.readBytes())
+        assertArrayEquals(source(3).readBytes(), bytes(target, prev))
+
+        // The next write finds the torn one bad by its recorded hash and drops it; the kept .prev stays.
+        target.write(name, source(6), keepPrevious = true)
+        assertEquals(listOf(name, prev), onDisk())
+        assertArrayEquals(source(6).readBytes(), bytes(target, name))
+        assertArrayEquals(source(3).readBytes(), bytes(target, prev))
+        target.write(name, source(7))
+        assertEquals(listOf(name), onDisk())
     }
 
     @Test
@@ -150,9 +217,9 @@ class SafBackupTargetTest {
         // Two writes interrupted in a row, at each of the two places a crash can leave work behind.
         crashes { SafBackupTarget(context, tree.uri, CrashAfterAside(name)).write(name, source(3), keepPrevious = true) }
         assertArrayEquals(complete.readBytes(), bytes(target, prev))
-        crashes { SafBackupTarget(context, tree.uri, CrashWriting(name)).write(name, source(4), keepPrevious = true) }
+        crashes { SafBackupTarget(context, tree.uri, CrashWriting(tmpName)).write(name, source(4), keepPrevious = true) }
         assertArrayEquals(complete.readBytes(), bytes(target, prev))
-        crashes { SafBackupTarget(context, tree.uri, CrashWriting(name)).write(name, source(5), keepPrevious = true) }
+        crashes { SafBackupTarget(context, tree.uri, CrashLanded(name)).write(name, source(5), keepPrevious = true) }
         assertArrayEquals(complete.readBytes(), bytes(target, prev))
 
         // An incomplete write that lands still keeps it; a complete one drops it and every leftover.

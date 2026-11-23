@@ -14,7 +14,8 @@ import java.io.FileNotFoundException
  * A documents provider for the instrumented tests of [SafSyncFolder] and [SafBackupTarget] (debug builds
  * only). Document ids are paths under `files/saf-stub/`; a test makes a directory there and opens it as a
  * tree. It lists no roots, so the system picker never shows it. Setting [revoked] makes every call fail as
- * a revoked grant does, with a [SecurityException].
+ * a revoked grant does, with a [SecurityException]; setting [renameUnsupported] makes renames fail as on a
+ * provider that cannot rename.
  */
 class StubDocumentsProvider : DocumentsProvider() {
 
@@ -56,6 +57,7 @@ class StubDocumentsProvider : DocumentsProvider() {
 
     override fun renameDocument(documentId: String, displayName: String): String {
         guard()
+        if (renameUnsupported) throw UnsupportedOperationException("Rename not supported")
         val from = file(documentId)
         val to = File(from.parentFile, displayName)
         if (to.exists() || !from.renameTo(to)) throw IllegalStateException("could not rename $documentId")
@@ -92,6 +94,9 @@ class StubDocumentsProvider : DocumentsProvider() {
         const val AUTHORITY = "com.hazia.medicall.stubdocs"
 
         @Volatile var revoked = false
+
+        /** Answers renames as a provider without FLAG_SUPPORTS_RENAME does. */
+        @Volatile var renameUnsupported = false
 
         fun base(filesDir: File) = File(filesDir, "saf-stub")
 
