@@ -48,4 +48,26 @@ class LineCipher(keys: Map<String, ByteArray>, val currentKeyId: String) {
         val sealed = runCatching { Base64.UrlSafe.decode(line, dot + 1) }.getOrNull() ?: return null
         return aesGcmOpen(key, sealed, keyId.encodeToByteArray())
     }
+
+    /**
+     * The key id [line] names, when it has the shape of a sealed line (an id of letters, digits, `-`
+     * or `_`, a dot, then base64url long enough for a nonce and a tag), or null. With [knows], it
+     * tells a line sealed under a key this device does not hold yet from one that was altered.
+     */
+    fun keyIdOf(line: String): String? {
+        val dot = line.indexOf('.')
+        if (dot <= 0) return null
+        val keyId = line.substring(0, dot)
+        if (!keyId.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '_' }) return null
+        val sealed = runCatching { Base64.UrlSafe.decode(line, dot + 1) }.getOrNull() ?: return null
+        return keyId.takeIf { sealed.size >= NONCE_BYTES + TAG_BYTES }
+    }
+
+    /** Whether this cipher holds the key [keyId]. */
+    fun knows(keyId: String): Boolean = keyId in keys
+
+    private companion object {
+        const val NONCE_BYTES = 12
+        const val TAG_BYTES = 16
+    }
 }
