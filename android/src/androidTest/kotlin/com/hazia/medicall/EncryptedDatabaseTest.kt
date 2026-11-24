@@ -28,6 +28,7 @@ class EncryptedDatabaseTest {
     @After fun clean() {
         context.getDatabasePath(name).parentFile?.listFiles { f -> f.name.startsWith(name) }?.forEach { it.delete() }
         File(context.filesDir, "vault-test.sealed").delete()
+        File(context.filesDir, "vault-test-passphrase.sealed").delete()
     }
 
     private fun openAndProbe(key: ByteArray) {
@@ -63,6 +64,20 @@ class EncryptedDatabaseTest {
         KeyVault(context, file).store(keyA)
         assertFalse("the key is not stored in the clear", file.readBytes().toList().windowed(32).any { it.toByteArray() contentEquals keyA })
         assertArrayEquals(keyA, KeyVault(context, file).load())
+    }
+
+    // SPEC:R109 the passphrase is entered once per device: it survives a restart, sealed, never in the clear.
+    @Test
+    fun passphraseSurvivesRestart_SPEC_R109() {
+        val keyFile = File(context.filesDir, "vault-test.sealed")
+        val file = File(context.filesDir, "vault-test-passphrase.sealed")
+        val passphrase = "invented-walk-passphrase-é"
+        KeyVault(context, keyFile, file).storePassphrase(passphrase.toCharArray())
+        val stored = file.readBytes()
+        val plain = passphrase.encodeToByteArray()
+        assertFalse("the passphrase is not stored in the clear", stored.toList().windowed(plain.size).any { it.toByteArray() contentEquals plain })
+        assertEquals(passphrase, KeyVault(context, keyFile, file).loadPassphrase()?.concatToString())
+        assertFalse("the key file is apart and untouched", keyFile.exists())
     }
 
     @Test
