@@ -1,5 +1,6 @@
 package com.hazia.medicall.data
 
+import androidx.room.AutoMigration
 import androidx.room.ConstructedBy
 import androidx.room.Database
 import androidx.room.RoomDatabase
@@ -34,6 +35,7 @@ import com.hazia.medicall.data.sync.WaitingEntity
         BlobSeenEntity::class, BlobHeldEntity::class,
     ],
     version = SCHEMA_VERSION,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
     exportSchema = true,
 )
 @ConstructedBy(MedicAllDatabaseConstructor::class)
@@ -68,5 +70,5 @@ expect object MedicAllDatabaseConstructor : RoomDatabaseConstructor<MedicAllData
 
 const val DATABASE_NAME = "medicall.db"
 
-/** The schema's version; a file below it is upgraded by Room's migrations on open. Version 1 has none. */
-internal const val SCHEMA_VERSION = 1
+/** The schema's version; a file below it is upgraded by Room's migrations on open. Version 2 adds the profile's modules and origin (SPEC:R14). */
+internal const val SCHEMA_VERSION = 2

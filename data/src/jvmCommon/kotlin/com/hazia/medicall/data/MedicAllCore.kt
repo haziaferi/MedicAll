@@ -28,10 +28,26 @@ import com.hazia.medicall.data.sync.ImportReport
 import com.hazia.medicall.data.sync.SyncFolder
 import com.hazia.medicall.data.sync.loadClock
 import java.io.File
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
-/** A profile as [MedicAllCore.profiles] lists it; [removedAt] is set while it is in the bin. */
-data class ProfileInfo(val id: String, val name: String, val kind: String, val removedAt: Long?)
+/**
+ * A profile as [MedicAllCore.profiles] lists it (SPEC:R14): [birthDate] an ISO date or null, [modules] those
+ * switched on, [createdDevice] the device that made it (null for a profile from before it was recorded),
+ * [removedAt] set while it is in the bin.
+ */
+data class ProfileInfo(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val birthDate: String?,
+    val modules: Set<Module>,
+    val createdDevice: String?,
+    val removedAt: Long?,
+)
 
 /**
  * What [MedicAllCore.syncNow] did: [imported] is the import's report. [unlockAgain] is true when the key
@@ -72,7 +88,7 @@ data class FileInfo(val id: String, val profileId: String, val name: String, val
 class MedicAllCore private constructor(
     private val db: MedicAllDatabase,
     folder: SyncFolder,
-    device: String,
+    private val device: String,
     clock: HybridClock,
     private val cipher: LineCipher,
     private val passphrase: CharArray,
@@ -98,18 +114,47 @@ class MedicAllCore private constructor(
     private val sync = FolderSync(db, folder, device, clock, writes.tables, cipher, wallMillis, recovered = recovered)
     private val restorer = BackupRestore(writes, blobs, SevenZip, wallMillis)
 
-    /** A new profile named [name], of [kind] (SPEC:R15), every group stamped with one tick; returns its id. */
-    suspend fun addProfile(name: String, kind: String = PERSON): String {
+    /**
+     * A new profile named [name], of [kind], born on [birthDate] (SPEC:R14, R15), with every module on and this
+     * device as its origin (SPEC:R110), every group stamped with one tick; returns its id. A [birthDate] that
+     * is not an ISO date, or is after today, throws an [IllegalArgumentException].
+     */
+    suspend fun addProfile(name: String, kind: String = PERSON, birthDate: String? = null): String {
+        checkBirthDate(birthDate)
         val id = Ids.new()
         writes.write(mapOf(PROFILE to listOf(id))) { store ->
             val s = writes.clock.tick()
             writes.merger.created(store, Row(PROFILE, id, mapOf(
                 NAME to Group(s, mapOf("name" to name)),
-                DETAILS to Group(s, mapOf("birth_date" to null, "kind" to kind)),
+                DETAILS to Group(s, mapOf("birth_date" to birthDate, "kind" to kind)),
                 REMOVED to Group(s, mapOf("removed_at" to null)),
+                MODULES to Group(s, allModulesOn()),
+                ORIGIN to Group(s, mapOf("created_device" to device)),
             )))
         }
         return id
+    }
+
+    /** Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Its details group keeps the kind. */
+    suspend fun setBirthDate(id: String, birthDate: String?) {
+        checkBirthDate(birthDate)
+        val kind = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }.kind
+        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate, "kind" to kind) }
+    }
+
+    /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
+    suspend fun setModule(id: String, module: Module, on: Boolean) =
+        writes.edit(PROFILE, id, MODULES) { mapOf(module.key to on) }
+
+    /** SPEC:R14: a birth date is a date, never an age, and not after today in this core's time zone. */
+    private fun checkBirthDate(birthDate: String?) {
+        if (birthDate == null) return
+        val date = try {
+            LocalDate.parse(birthDate, DateTimeFormatter.ISO_LOCAL_DATE)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("not a date: $birthDate", e)
+        }
+        require(!date.isAfter(Instant.ofEpochMilli(wallMillis()).atZone(zone).toLocalDate())) { "a birth date after today: $birthDate" }
     }
 
     /** Renames profile [id]: its name group only, so a change of kind elsewhere survives the merge (SPEC:R16). */
@@ -123,7 +168,8 @@ class MedicAllCore private constructor(
 
     /** Every profile, the bin's included, by name then id. */
     suspend fun profiles(): List<ProfileInfo> =
-        profiles.allProfiles().map { ProfileInfo(it.id, it.name, it.kind, it.removedAt) }.sortedWith(compareBy({ it.name }, { it.id }))
+        profiles.allProfiles().map { ProfileInfo(it.id, it.name, it.kind, it.birthDate, it.modules, it.createdDevice, it.removedAt) }
+            .sortedWith(compareBy({ it.name }, { it.id }))
 
     /** Stores [bytes] for [profileId] as [name] of type [mime] ([Blobs.add]); returns the file reference's id. */
     suspend fun addFile(profileId: String, name: String, mime: String, bytes: ByteArray): String = blobs.add(profileId, name, mime, bytes)

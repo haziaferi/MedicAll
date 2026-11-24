@@ -52,12 +52,13 @@ class DatabaseTest {
 
     @Test
     fun schemaFileMatchesVersion() {
-        // Gradle runs the desktop tests in the module's directory, where Room exports the schema.
-        val schema = File("schemas/com.hazia.medicall.data.MedicAllDatabase/1.json")
-
-        assertTrue(schema.isFile, "no schema file at ${schema.absolutePath}")
-        val version = Json.parseToJsonElement(schema.readText()).jsonObject.getValue("database").jsonObject.getValue("version").jsonPrimitive.int
-        assertEquals(1, version)
-        assertEquals(SCHEMA_VERSION, version)
+        // Gradle runs the desktop tests in the module's directory, where Room exports the schema. Every version's
+        // file is kept: an auto-migration from an older one needs it.
+        for (v in 1..SCHEMA_VERSION) {
+            val schema = File("schemas/com.hazia.medicall.data.MedicAllDatabase/$v.json")
+            assertTrue(schema.isFile, "no schema file at ${schema.absolutePath}")
+            val version = Json.parseToJsonElement(schema.readText()).jsonObject.getValue("database").jsonObject.getValue("version").jsonPrimitive.int
+            assertEquals(v, version)
+        }
     }
 }
