@@ -13,157 +13,195 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.hazia.medicall.core.crypto.MIN_PASSPHRASE
 import com.hazia.medicall.core.crypto.Unlock
+import com.hazia.medicall.core.lock.AppLock
+import com.hazia.medicall.core.lock.Verdict
 import com.hazia.medicall.data.BLOB_REF
 import com.hazia.medicall.data.MedicAllCore
-import com.hazia.medicall.data.MedicAllDatabase
+import com.hazia.medicall.data.Module
 import com.hazia.medicall.data.Opened
 import com.hazia.medicall.data.PROFILE
 import com.hazia.medicall.data.ProfileInfo
-import com.hazia.medicall.data.blob.DirectoryBlobStore
-import com.hazia.medicall.data.deviceId
-import com.hazia.medicall.data.openEncryptedDatabase
-import com.hazia.medicall.data.ownLogRead
+import com.hazia.medicall.data.device.JoinedFolder
 import kotlinx.coroutines.runBlocking
-import java.io.File
 import java.time.Instant
 import java.util.concurrent.Executors
 
 /**
- * The phase 1 debug harness (SPEC:R100, debug builds only): one plain screen whose buttons drive
- * [MedicAllCore] for the two-phone walk. It holds no logic of its own; it is a test tool, not part of
- * any screen design. Each button runs on one background thread, in the order pressed.
+ * The debug harness (SPEC:R100, debug builds only) for the phase 1 and phase 2a walks: one plain screen whose
+ * buttons drive [AndroidDevice]. It holds no logic of its own and is not part of any screen design. Each button
+ * runs on one background thread, in the order pressed.
  *
- * The folders are picked through the Storage Access Framework with persistable read and write grants,
- * and remembered across starts. The database opens with its own random key ([KeyVault.databaseKey],
- * SPEC:R10); the passphrase unlocks (or makes) the key file in the sync folder and seals the backups, and
- * is kept sealed by [KeyVault] (SPEC:R109), so on the next start the harness opens everything without asking.
+ * Folders: "Join folder" picks a Syncthing folder (opened at `Documents/MedicAll-2a-<text>`, since DocumentsUI
+ * ignores adb taps on its rows) and joins it with the typed passphrase, labelled with the text field. "Next folder"
+ * moves the selection; profile, file, bin, sync and backup buttons act on the selected folder, and profile buttons
+ * on the selected profile ("Next profile").
  *
- * "Edit name", "Edit kind", "Add test file" and "Remove" act on the first live profile by name;
- * "Restore" on the profile most recently put in the bin. The text field gives "Add test profile" and
- * "Edit name" their name, and "Empty bin" its confirmation.
+ * Lock (SPEC:R11): when it is on, leaving the app and coming back past the timeout replaces the whole screen with
+ * the lock screen, so no profile shows until the PIN, the fingerprint or a folder's passphrase opens it.
  */
 class HarnessActivity : Activity() {
 
     private val worker = Executors.newSingleThreadExecutor()
-    private val prefs by lazy { getSharedPreferences("harness", MODE_PRIVATE) }
 
     private lateinit var passphraseField: EditText
     private lateinit var textField: EditText
     private lateinit var statusView: TextView
     private lateinit var stateView: TextView
+    private lateinit var mainView: View
+    private lateinit var lockView: View
+    private lateinit var pinField: EditText
+    private lateinit var lockPassphraseField: EditText
+    private lateinit var lockStatus: TextView
 
     // Touched on the worker thread only.
-    private var db: MedicAllDatabase? = null
-    private var core: MedicAllCore? = null
+    private var phone: AndroidDevice? = null
+    private var folderId: String? = null
+    private var profileId: String? = null
 
-    // The status line: the last report of each kind, and the last message. Main thread only.
-    private var lastImport = "-"
-    private var lastBackup = "-"
-    private var lastRestore = "-"
-    private var lastIntegrity = "-"
-    private var lastMessage = "Pick the sync folder, then type the passphrase and press Set passphrase."
+    // Main thread only.
+    private var lastMessage = "Type a label (A or B) and the passphrase, then press Join folder."
+    private var lastReport = "-"
+    private var pendingJoinLabel: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(32, 32, 32, 32)
-        }
-        column.addView(TextView(this).apply { text = "MedicAll phase 1 harness (debug)" })
-        statusView = TextView(this).also(column::addView)
-        stateView = TextView(this).also(column::addView)
-        passphraseField = EditText(this).apply {
-            hint = "Passphrase (at least $MIN_PASSPHRASE characters)"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            // The walk's test passphrase is no account: keep the phone's password manager away from it.
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
-        }.also(column::addView)
-        textField = EditText(this).apply {
-            hint = "Name, or DELETE to empty the bin"
-            inputType = InputType.TYPE_CLASS_TEXT
-        }.also(column::addView)
-
-        button(column, "Set passphrase") { setPassphrase() }
-        button(column, "Pick sync folder") { pick(PICK_SYNC) }
-        button(column, "Pick backup folder") { pick(PICK_BACKUP) }
-        button(column, "Add test profile") { val name = text("Profile A"); run("Add test profile") { it.addProfile(name); "added $name" } }
-        button(column, "Edit name") {
-            val typed = text("")
-            run("Edit name") { c ->
-                val p = live(c)
-                val name = typed.ifEmpty { "${p.name} renamed" }
-                c.rename(p.id, name)
-                "renamed to $name"
-            }
-        }
-        button(column, "Edit kind") {
-            run("Edit kind") { c ->
-                val p = live(c)
-                val kind = if (p.kind == MedicAllCore.PET) MedicAllCore.PERSON else MedicAllCore.PET
-                c.changeKind(p.id, kind)
-                "kind of ${p.name} set to $kind"
-            }
-        }
-        button(column, "Add test file") {
-            run("Add test file") { c ->
-                val p = live(c)
-                val n = c.files().size + 1
-                val bytes = "Invented test file $n, made ${Instant.now()}. No real data.".encodeToByteArray()
-                c.addFile(p.id, "test-$n.txt", "text/plain", bytes)
-                "added test-$n.txt to ${p.name}"
-            }
-        }
-        button(column, "Remove") { run("Remove") { c -> val p = live(c); c.remove(PROFILE, p.id); "${p.name} is in the bin" } }
-        button(column, "Restore") {
-            run("Restore") { c ->
-                val entry = c.binContents().lastOrNull { it.table == PROFILE } ?: error("No profile is in the bin.")
-                c.restore(PROFILE, entry.id)
-                "restored ${entry.id}"
-            }
-        }
-        button(column, "Empty bin") { val typed = text(""); run("Empty bin") { it.emptyBin(typed); "the bin is empty" } }
-        button(column, "Sync now") {
-            run("Sync now") { c ->
-                val r = c.syncNow()
-                ui { lastImport = "$r" }
-                // The key folder moved past this cipher (a key-file clash settled, or the passphrase changed on another
-                // device): open again with the kept passphrase; if that is refused, the person types the new one.
-                if (!r.unlockAgain) "synced" else {
-                    val kept = KeyVault(this).loadPassphrase()
-                    if (kept == null) "synced; the key folder changed: type the passphrase"
-                    else "synced; the key folder changed. " + unlock(kept, typedNow = false)
-                }
-            }
-        }
-        button(column, "Back up now") {
-            run("Back up now") { c -> c.backUp(backupTarget()).also { r -> ui { lastBackup = "$r" } }; "backup done" }
-        }
-        button(column, "Restore backup") {
-            run("Restore backup") { c ->
-                val r = c.restoreBackup(backupTarget())
-                ui { lastRestore = r?.toString() ?: "null (wrong passphrase, or not a MedicAll archive)" }
-                "restore done"
-            }
-        }
-        button(column, "Check files") {
-            run("Check files") { c -> c.checkFiles(backupTarget()).also { r -> ui { lastIntegrity = "$r" } }; "check done" }
-        }
-
-        setContentView(ScrollView(this).apply {
-            fitsSystemWindows = true
-            addView(column)
-        })
+        mainView = buildMain()
+        lockView = buildLock()
+        setContentView(mainView)
         show()
-        worker.execute { unlockFromVault(); refresh() }
+        work {
+            val p = AndroidDevice(this).also { phone = it }
+            val opened = runBlocking { p.openAll() }
+            folderId = p.device.folders().firstOrNull { p.device.core(it.id) != null }?.id
+            val failed = opened.values.mapNotNull { it.exceptionOrNull()?.message }
+            "Opened ${opened.count { it.value.getOrNull() is Opened.Ready }} of ${p.device.folders().size} folders as device ${p.deviceId}" +
+                failed.joinToString("") { "\n$it" }
+        }
+        work { showLockIfLocked(); null }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        worker.execute { phone?.device?.lock?.onForeground(); showLockIfLocked() }
+    }
+
+    override fun onStop() {
+        worker.execute { phone?.device?.lock?.onBackground() }
+        super.onStop()
     }
 
     override fun onDestroy() {
-        worker.execute {
-            core?.close()
-            db?.close()
-        }
+        worker.execute { phone?.close() }
         worker.shutdown()
         super.onDestroy()
+    }
+
+    private fun buildMain(): View {
+        val column = column()
+        column.addView(TextView(this).apply { text = "MedicAll phase 2a harness (debug)" })
+        statusView = TextView(this).also(column::addView)
+        stateView = TextView(this).also(column::addView)
+        passphraseField = secretField("Passphrase (at least $MIN_PASSPHRASE characters)").also(column::addView)
+        textField = EditText(this).apply {
+            hint = "Label, name, date, PIN (old new), or DELETE"
+            inputType = InputType.TYPE_CLASS_TEXT
+        }.also(column::addView)
+
+        heading(column, "Folders")
+        button(column, "Join folder") { val label = text(""); if (label.isEmpty()) message("Type a label first.") else { pendingJoinLabel = label; pick(PICK_JOIN, "Documents/MedicAll-2a-$label") } }
+        button(column, "Next folder") { work { val p = need(); val open = p.device.folders().filter { p.device.core(it.id) != null }; folderId = next(open.map { it.id }, folderId); profileId = null; "selected ${label(p, folderId)}" } }
+        button(column, "Leave folder") { work { val p = need(); val id = folderId ?: error("No folder selected."); runBlocking { p.device.leave(id) }; folderId = null; profileId = null; "left the folder; its database is set aside" } }
+        button(column, "Pick backup folder") { val label = text("A"); pick(PICK_BACKUP, "Documents/MedicAll-2a-backup-$label") }
+
+        heading(column, "Profiles of the selected folder")
+        button(column, "Add test profile") { val name = text("Profile A"); onCore("Add test profile") { c -> c.addProfile(name).also { profileId = it }; "added $name" } }
+        button(column, "Next profile") { onCore("Next profile") { c -> profileId = next(c.profiles().filter { it.removedAt == null }.map { it.id }, profileId); "selected ${selected(c).name}" } }
+        button(column, "Edit name") { val typed = text(""); onCore("Edit name") { c -> val p = selected(c); val name = typed.ifEmpty { "${p.name} renamed" }; c.rename(p.id, name); "renamed to $name" } }
+        button(column, "Birth date") { val typed = text(""); onCore("Birth date") { c -> val p = selected(c); c.setBirthDate(p.id, typed.ifEmpty { null }); "birth date of ${p.name}: ${typed.ifEmpty { "none" }}" } }
+        for (m in Module.entries) {
+            button(column, "Module ${m.key} on/off") { onCore("Module") { c -> val p = selected(c); val on = m !in p.modules; c.setModule(p.id, m, on); "${m.key} ${if (on) "on" else "off"} for ${p.name}" } }
+        }
+        button(column, "Reminders here on/off") { onCore("Reminders") { c -> val p = selected(c); val on = !c.remindersHere(p.id); c.setRemindersHere(p.id, on); "reminders here ${if (on) "on" else "off"} for ${p.name}" } }
+        button(column, "Shown here on/off") { onCore("Shown") { c -> val p = selected(c); val on = !c.shownHere(p.id); c.setShownHere(p.id, on); "shown here ${if (on) "on" else "off"} for ${p.name}" } }
+        button(column, "Add test file") {
+            onCore("Add test file") { c ->
+                val p = selected(c)
+                val n = c.files().size + 1
+                c.addFile(p.id, "test-$n.txt", "text/plain", "Invented test file $n, made ${Instant.now()}. No real data.".encodeToByteArray())
+                "added test-$n.txt to ${p.name}"
+            }
+        }
+        button(column, "Remove") { onCore("Remove") { c -> val p = selected(c); c.remove(PROFILE, p.id); profileId = null; "${p.name} is in the bin" } }
+        button(column, "Restore") { onCore("Restore") { c -> val e = c.binContents().lastOrNull { it.table == PROFILE } ?: error("No profile is in the bin."); c.restore(PROFILE, e.id); "restored ${e.id.take(8)}" } }
+        button(column, "Empty bin") { val typed = text(""); onCore("Empty bin") { it.emptyBin(typed); "the bin is empty" } }
+
+        heading(column, "Sync and backups")
+        button(column, "Sync now (every folder)") { work { syncAll(need()) } }
+        button(column, "Back up now") { onCore("Back up now") { c -> val r = c.backUp(backup()); ui { lastReport = "$r" }; "backup done" } }
+        button(column, "Restore backup") { onCore("Restore backup") { c -> val r = c.restoreBackup(backup()); ui { lastReport = r?.toString() ?: "null (wrong passphrase, or not a MedicAll archive)" }; "restore done" } }
+        button(column, "Check files") { onCore("Check files") { c -> val r = c.checkFiles(backup()); ui { lastReport = "$r" }; "check done" } }
+
+        heading(column, "App lock")
+        button(column, "Set PIN") { val pin = text("").toCharArray(); work { lock().setPin(pin); pin.fill(' '); "the lock is on" } }
+        button(column, "Change PIN (old new)") {
+            val parts = text("").split(" ").filter { it.isNotEmpty() }
+            work { require(parts.size == 2) { "Type the old PIN, a space, the new PIN." }; "change: ${lock().changePin(parts[0].toCharArray(), parts[1].toCharArray())}" }
+        }
+        button(column, "Turn lock off (PIN)") { val pin = text("").toCharArray(); work { "turn off: ${lock().turnOff(pin)}".also { pin.fill(' ') } } }
+        button(column, "Timeout (next)") { work { val l = lock(); val now = phone!!.lockMinutes(); val m = AppLock.TIMEOUTS[(AppLock.TIMEOUTS.indexOf(now) + 1) % AppLock.TIMEOUTS.size]; l.setTimeout(m); "lock after $m min in the background" } }
+        button(column, "Fingerprint on/off") {
+            if (!BiometricGate.available(this)) message("No strong biometric is enrolled on this phone.")
+            else work { val l = lock(); val on = !phone!!.fingerprintOn(); l.setFingerprint(on); "fingerprint ${if (on) "on" else "off"}" }
+        }
+        return ScrollView(this).apply { fitsSystemWindows = true; addView(column) }
+    }
+
+    private fun buildLock(): View {
+        val column = column()
+        column.addView(TextView(this).apply { text = "MedicAll is locked" })
+        lockStatus = TextView(this).also(column::addView)
+        pinField = secretField("PIN").apply { inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD }.also(column::addView)
+        button(column, "Unlock") {
+            val pin = CharArray(pinField.length()) { pinField.text[it] }
+            pinField.text.clear()
+            worker.execute { val v = lock().unlock(pin); pin.fill(' '); afterAttempt(v) }
+        }
+        button(column, "Use fingerprint") {
+            BiometricGate.ask(this, "Unlock MedicAll", "Use the PIN",
+                passed = { worker.execute { runCatching { lock().unlockedByFingerprint() }; afterAttempt(Verdict.Ok) } },
+                notPassed = { reason -> lockStatus.text = reason })
+        }
+        lockPassphraseField = secretField("Forgot the PIN? A folder's passphrase").also(column::addView)
+        button(column, "Forgot PIN") {
+            val typed = CharArray(lockPassphraseField.length()) { lockPassphraseField.text[it] }
+            lockPassphraseField.text.clear()
+            worker.execute { val v = need().device.removeForgottenPin(typed); typed.fill(' '); afterAttempt(v, "The PIN is removed: set a new one.") }
+        }
+        return ScrollView(this).apply { fitsSystemWindows = true; addView(column) }
+    }
+
+    /** Shows the lock screen while the lock is closed. Worker thread. */
+    private fun showLockIfLocked() {
+        val locked = phone?.device?.lock?.isLocked == true
+        runOnUiThread {
+            if (locked) { lockStatus.text = ""; setContentView(lockView) }
+        }
+        if (!locked) refresh()
+    }
+
+    /** After a PIN, fingerprint or passphrase try: back to the harness on [Verdict.Ok], else why not. Worker thread. */
+    private fun afterAttempt(v: Verdict, okText: String = "Unlocked.") {
+        if (v == Verdict.Ok && !lock().isLocked) {
+            runOnUiThread { setContentView(mainView) }
+            ui { lastMessage = okText }
+            refresh()
+        } else runOnUiThread {
+            lockStatus.text = when (v) {
+                is Verdict.Wrong -> "Wrong. ${v.triesLeft} tries before a wait."
+                is Verdict.Wait -> "Too many wrong tries: wait ${(v.millis + 999) / 1000} s."
+                Verdict.Ok -> "Not unlocked."
+            }
+        }
     }
 
     @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION") // the platform Activity's own callback; the harness needs nothing newer
@@ -172,133 +210,129 @@ class HarnessActivity : Activity() {
         val uri = data?.data
         if (resultCode != RESULT_OK || uri == null) return message("No folder picked.")
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        val key = if (requestCode == PICK_SYNC) KEY_SYNC else KEY_BACKUP
-        prefs.edit().putString(key, uri.toString()).apply()
-        message(if (requestCode == PICK_SYNC) "Sync folder picked." else "Backup folder picked.")
-        worker.execute { unlockFromVault(); refresh() }
+        when (requestCode) {
+            PICK_JOIN -> {
+                val label = pendingJoinLabel ?: return
+                val typed = CharArray(passphraseField.length()) { passphraseField.text[it] }
+                passphraseField.text.clear()
+                if (typed.size < MIN_PASSPHRASE) return message("The passphrase needs at least $MIN_PASSPHRASE characters.")
+                work {
+                    val p = need()
+                    val opened = runBlocking { p.device.join("Folder $label", uri.toString(), typed) }
+                    typed.fill(' ')
+                    when (opened) {
+                        is Opened.Ready -> { folderId = p.device.folders().last().id; profileId = null; "joined Folder $label" }
+                        is Opened.Refused -> refusal(opened.reason)
+                    }
+                }
+            }
+            PICK_BACKUP -> work { val id = folderId ?: error("Select a folder first."); need().setBackup(id, uri); "backup folder set for ${label(need(), id)}" }
+        }
     }
 
-    private fun pick(code: Int) {
+    private fun pick(code: Int, initial: String) {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION,
         )
-        // The walk's folders (Task 16). Opening the picker there leaves only its buttons to press:
-        // DocumentsUI ignores adb-injected taps on its folder rows (seen on the 6T, Android 11).
-        val folder = if (code == PICK_SYNC) "Documents/MedicAll-test" else "Documents/MedicAll-backup-test"
         intent.putExtra(
             android.provider.DocumentsContract.EXTRA_INITIAL_URI,
-            Uri.parse("content://com.android.externalstorage.documents/document/primary%3A" + Uri.encode(folder)),
+            Uri.parse("content://com.android.externalstorage.documents/document/primary%3A" + Uri.encode(initial)),
         )
         @Suppress("DEPRECATION")
         startActivityForResult(intent, code)
     }
 
-    /** Unlocks with the typed passphrase, which the vault then keeps sealed (SPEC:R109). */
-    private fun setPassphrase() {
-        val typed = CharArray(passphraseField.length()) { passphraseField.text[it] }
-        passphraseField.text.clear()
-        if (typed.size < MIN_PASSPHRASE) return message("The passphrase needs at least $MIN_PASSPHRASE characters.")
-        worker.execute { val said = unlock(typed, typedNow = true); ui { lastMessage = said }; refresh() }
-    }
-
-    /** On start: unlocks with the passphrase the vault keeps, when there is one and the sync folder is picked. Worker thread. */
-    private fun unlockFromVault() {
-        if (core != null || prefs.getString(KEY_SYNC, null) == null) return
-        val kept = runCatching { KeyVault(this).loadPassphrase() }
-            .getOrElse { ui { lastMessage = "The key store did not answer: ${it.message ?: it}. Try again." }; return } ?: return
-        val said = unlock(kept, typedNow = false)
-        ui { lastMessage = said }
-    }
-
-    /** Set by the first open of the database: whether it set an old database aside. Worker thread only. */
-    private var recovered = false
-
-    /**
-     * Opens the database with the vault's key, once (SPEC:R10: it does not depend on the passphrase), then
-     * builds the core from [phrase] (SPEC:R109); a [typedNow] passphrase that opened it is sealed in the
-     * vault. Clears [phrase]. Returns what to tell the person. Worker thread.
-     */
-    private fun unlock(phrase: CharArray, typedNow: Boolean): String {
-        val outcome = runCatching {
-            val device = deviceId(File(filesDir, DEVICE_FILE))
-            val folder = syncFolder(device)
-            check(folder.reachable()) { "The sync folder cannot be reached." }
-            val database = db ?: run {
-                val vault = KeyVault(this)
-                val key = vault.databaseKey()
-                val open = openEncryptedDatabase(this, key.bytes, setAsideExisting = key.isNew)
-                // Stored only once the database opens with it: a crash before leaves no key that opens nothing.
-                if (key.isNew) vault.store(key.bytes)
-                key.bytes.fill(0)
-                recovered = open.recovered
-                open.database.also { db = it }
-            }
-            val opened = runBlocking {
-                MedicAllCore.open(
-                    database, folder, device, phrase, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
-                    recovered = recovered,
-                    ownLogRead = { ownLogRead(this@HarnessActivity); recovered = false },
-                )
-            }
-            when (opened) {
-                is Opened.Ready -> {
-                    if (typedNow) KeyVault(this).storePassphrase(phrase)
-                    core?.close()
-                    core = opened.core
-                    (if (typedNow) "Unlocked" else "Unlocked with the kept passphrase") + " as device $device" +
-                        if (recovered) " (the database was set aside and is filled again from the sync folder)" else ""
-                }
-                is Opened.Refused -> when (opened.reason) {
-                    Unlock.KeyFileNotArrived -> "Another device's key file has not arrived yet: wait for the sync and try again."
-                    Unlock.WrongPassphrase -> "This passphrase does not open the key file (was it changed on another device?): type the current one."
-                    else -> "The key file did not unlock: ${opened.reason}"
+    /** Syncs every open folder; a folder whose key folder moved on opens again with its kept passphrase (SPEC:R109). Worker thread. */
+    private fun syncAll(p: AndroidDevice): String = p.device.folders().mapNotNull { f ->
+        val c = p.device.core(f.id) ?: return@mapNotNull "${f.label}: not open"
+        runCatching {
+            val r = runBlocking { c.syncNow() }
+            if (!r.unlockAgain) "${f.label}: ${r.imported}" else {
+                val kept = KeyVault.forFolder(this, f.id).loadPassphrase()
+                if (kept == null) "${f.label}: the key folder changed; join again with the passphrase"
+                else when (val o = runBlocking { p.device.reopen(f.id, kept) }.also { kept.fill(' ') }) {
+                    is Opened.Ready -> "${f.label}: opened again with the kept passphrase"
+                    is Opened.Refused -> "${f.label}: ${refusal(o.reason)}"
                 }
             }
-        }
-        phrase.fill(' ')
-        return outcome.getOrElse { "Unlock failed: ${it.message ?: it}" }
+        }.getOrElse { "${f.label}: sync failed: ${it.message ?: it}" }
+    }.joinToString("\n").ifEmpty { "No folder joined." }
+
+    private fun refusal(reason: Unlock) = when (reason) {
+        Unlock.KeyFileNotArrived -> "another device's key file has not arrived yet: wait for the sync and try again"
+        Unlock.WrongPassphrase -> "this passphrase does not open the folder's key file"
+        else -> "the key file did not unlock: $reason"
     }
 
-    /** Runs [action] on the core off the main thread, then shows its message, or why it failed. */
-    private fun run(what: String, action: suspend (MedicAllCore) -> String) {
+    /** Runs [action] on the worker thread, then shows its message (null: none), or why it failed. */
+    private fun work(action: () -> String?) {
         worker.execute {
-            val outcome = runCatching {
-                val c = core ?: error("Set the passphrase first.")
-                runBlocking { action(c) }
-            }
-            ui { lastMessage = outcome.getOrElse { "$what failed: ${it.message ?: it}" } }
+            val outcome = runCatching(action)
+            outcome.getOrElse { "Failed: ${it.message ?: it}" }?.let { said -> ui { lastMessage = said } }
             refresh()
         }
     }
 
-    /** Redraws what the harness knows: the folders, the profiles, the files and the bin. Worker thread. */
+    /** Runs [action] on the selected folder's core. */
+    private fun onCore(what: String, action: suspend (MedicAllCore) -> String) = work {
+        val c = need().device.core(folderId ?: error("Select a folder first.")) ?: error("The selected folder is not open.")
+        runCatching { runBlocking { action(c) } }.getOrElse { "$what failed: ${it.message ?: it}" }
+    }
+
+    private fun need(): AndroidDevice = phone ?: error("Still starting.")
+    private fun lock(): AppLock = need().device.lock
+    private fun backup() = need().backupTarget(folderId ?: error("Select a folder first.")) ?: error("Pick the backup folder first.")
+    private fun label(p: AndroidDevice, id: String?) = p.device.folders().firstOrNull { it.id == id }?.label ?: "none"
+
+    private suspend fun selected(c: MedicAllCore): ProfileInfo {
+        val live = c.profiles().filter { it.removedAt == null }
+        return live.firstOrNull { it.id == profileId } ?: live.firstOrNull()?.also { profileId = it.id } ?: error("No live profile: add one first.")
+    }
+
+    private fun <T> next(items: List<T>, current: T?): T? = if (items.isEmpty()) null else items[(items.indexOf(current) + 1) % items.size]
+
+    /** Redraws the folders, the selected folder's profiles with their switches, its files and bin, and the lock. Worker thread. */
     private fun refresh() {
-        val c = core
-        val listing = runCatching {
-            if (c == null) "Locked." else runBlocking {
-                val profiles = c.profiles().joinToString("\n") { p -> "  ${p.name} [${p.kind}]${if (p.removedAt != null) " in bin" else ""} ${p.id.take(8)}" }
+        val p = phone ?: return
+        val text = runCatching {
+            val folders = p.device.folders().joinToString("\n") { f: JoinedFolder ->
+                "${if (f.id == folderId) "> " else "  "}${f.label}${if (p.device.core(f.id) == null) " (not open)" else ""} backup: ${if (f.backupUri == null) "not picked" else "picked"}"
+            }
+            val c = folderId?.let(p.device::core)
+            val listing = if (c == null) "No folder selected." else runBlocking {
+                val profiles = c.profiles().map { pr ->
+                    "${if (pr.id == profileId) "> " else "  "}${pr.name} [${pr.kind}] born ${pr.birthDate ?: "-"}" +
+                        " modules ${pr.modules.joinToString(",") { it.key }} reminders here ${c.remindersHere(pr.id)}" +
+                        " shown here ${c.shownHere(pr.id)} from ${pr.createdDevice ?: "?"}${if (pr.removedAt != null) " in bin" else ""}"
+                }.joinToString("\n")
                 val files = c.files().joinToString("\n") { f -> "  ${f.name} ${f.sha256.take(8)}${if (f.removedAt != null) " in bin" else ""}" }
                 val bin = c.binContents().joinToString(", ") { "${if (it.table == BLOB_REF) "file" else "profile"} ${it.id.take(8)}" }
                 "Profiles:\n${profiles.ifEmpty { "  none" }}\nFiles:\n${files.ifEmpty { "  none" }}\nBin: ${bin.ifEmpty { "empty" }}"
             }
+            val l = p.device.lock
+            "Folders:\n${folders.ifEmpty { "  none" }}\n$listing\nLock: ${if (l.isOn) "on, ${p.lockMinutes()} min, fingerprint ${p.fingerprintOn()}" else "off"}"
         }.getOrElse { "Could not list: ${it.message ?: it}" }
-        val folders = "Sync folder: ${prefs.getString(KEY_SYNC, null) ?: "not picked"}\nBackup folder: ${prefs.getString(KEY_BACKUP, null) ?: "not picked"}"
-        ui { stateView.text = "$folders\n$listing" }
+        ui { stateView.text = text }
     }
 
     private fun show() {
-        statusView.text = "Last: $lastMessage\nSyncReport: $lastImport\nBackupResult: $lastBackup\nRestoreReport: $lastRestore\nIntegrityReport: $lastIntegrity"
+        statusView.text = "Last: $lastMessage\nReport: $lastReport"
     }
 
-    private fun ui(block: () -> Unit) = runOnUiThread {
-        block()
-        show()
-    }
+    private fun ui(block: () -> Unit) = runOnUiThread { block(); show() }
 
-    private fun message(text: String) {
-        lastMessage = text
-        show()
+    private fun message(text: String) { lastMessage = text; show() }
+
+    private fun column() = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
+
+    private fun heading(parent: LinearLayout, text: String) = parent.addView(TextView(this).apply { this.text = "\n$text" })
+
+    private fun secretField(hint: String) = EditText(this).apply {
+        this.hint = hint
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        // Test secrets are no account: keep the phone's password manager away from them.
+        importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
     }
 
     private fun button(parent: LinearLayout, label: String, onClick: () -> Unit) {
@@ -311,20 +345,8 @@ class HarnessActivity : Activity() {
 
     private fun text(default: String) = textField.text.toString().trim().ifEmpty { default }
 
-    private suspend fun live(c: MedicAllCore): ProfileInfo = c.profiles().firstOrNull { it.removedAt == null } ?: error("No live profile: add one first.")
-
-
-    private fun syncFolder(device: String) = SafSyncFolder(this, tree(KEY_SYNC) ?: error("Pick the sync folder first."), device)
-
-    private fun backupTarget() = SafBackupTarget(this, tree(KEY_BACKUP) ?: error("Pick the backup folder first."))
-
-    private fun tree(key: String): Uri? = prefs.getString(key, null)?.let(Uri::parse)
-
     private companion object {
-        const val PICK_SYNC = 1
+        const val PICK_JOIN = 1
         const val PICK_BACKUP = 2
-        const val KEY_SYNC = "sync_tree"
-        const val KEY_BACKUP = "backup_tree"
-        const val DEVICE_FILE = "device-id"
     }
 }

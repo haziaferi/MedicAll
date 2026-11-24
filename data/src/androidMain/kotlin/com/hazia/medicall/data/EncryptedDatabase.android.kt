@@ -63,6 +63,9 @@ fun ownLogRead(context: Context, name: String = DATABASE_NAME) {
     recoveringMarker(context.applicationContext, name).delete()
 }
 
+/** True while database [name], made anew, has not read its own log back yet: a core built over it again passes `recovered`. */
+fun isRecovering(context: Context, name: String = DATABASE_NAME): Boolean = recoveringMarker(context.applicationContext, name).exists()
+
 private fun recoveringMarker(app: Context, name: String) = java.io.File(app.getDatabasePath(name).path + RECOVERING_SUFFIX)
 
 /** Beside a database made anew until its own log is read back; not a database file, so never set aside with one. */
