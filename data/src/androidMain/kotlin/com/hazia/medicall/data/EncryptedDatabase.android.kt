@@ -20,7 +20,9 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  *
  * [setAsideExisting] is for a key made just now (the key store had none, or lost it): no database made
  * before can open with it, so an existing file is set aside first, kept, and the result says `recovered`,
- * which makes the sync read every peer's log again (SPEC:R10).
+ * which makes the first sync read this device's own log back (SPEC:R10). That mark lasts, in a file beside
+ * the database written before anything is set aside, so a restart before that sync still says `recovered`;
+ * [ownLogRead] clears it once the sync has read the log.
  */
 fun openEncryptedDatabase(
     context: Context,
@@ -33,8 +35,12 @@ fun openEncryptedDatabase(
     val app = context.applicationContext
     val file = app.getDatabasePath(name)
     file.parentFile?.mkdirs()
-    val setAside = setAsideExisting && file.exists()
-    if (setAside) setAsideDatabaseFiles(file.path, System.currentTimeMillis())
+    val marker = recoveringMarker(app, name)
+    fun setAsideMarked() {
+        marker.createNewFile()
+        setAsideDatabaseFiles(file.path, System.currentTimeMillis())
+    }
+    if (setAsideExisting && file.exists()) setAsideMarked()
     val literal = ("x'" + key.joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') } + "'").encodeToByteArray()
     val open = openOrRecover(
         build = {
@@ -46,11 +52,21 @@ fun openEncryptedDatabase(
         },
         probe = { db -> runBlocking { db.useReaderConnection { it.usePrepared("SELECT count(*) FROM sqlite_master") { s -> s.step() } } } },
         close = { it.close() },
-        setAside = { setAsideDatabaseFiles(file.path, System.currentTimeMillis()) },
+        setAside = ::setAsideMarked,
         isUnopenable = ::isCorruptDatabase,
     )
-    return if (setAside) DatabaseOpen(open.database, recovered = true) else open
+    return DatabaseOpen(open.database, recovered = open.recovered || marker.exists())
 }
+
+/** Clears the lasting mark of a database made anew, once the sync has read this device's own log back into it. */
+fun ownLogRead(context: Context, name: String = DATABASE_NAME) {
+    recoveringMarker(context.applicationContext, name).delete()
+}
+
+private fun recoveringMarker(app: Context, name: String) = java.io.File(app.getDatabasePath(name).path + RECOVERING_SUFFIX)
+
+/** Beside a database made anew until its own log is read back; not a database file, so never set aside with one. */
+private const val RECOVERING_SUFFIX = ".recovering"
 
 /** sqlcipher-android does not load its native library by itself; every process that opens the database needs it once. */
 private object SqlCipherLibrary {

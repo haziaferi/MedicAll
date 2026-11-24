@@ -160,6 +160,23 @@ class FolderSyncTest {
         assertTrue(w.syncthing.paths("A").none { ".sync-conflict-" in it })
     }
 
+    // SPEC:R10 a database made anew (its key lost, or a corrupt file set aside) does not compact its own log before
+    // it has read it back: a snapshot of the new, near-empty database would replace the segments holding its history.
+    @Test
+    fun aRecoveredDatabaseDoesNotCompactBeforeReadingItsOwnLog() {
+        val w = world(segmentBytes = 200, snapshotEvery = 2)
+        val before = w.Device("A")
+        val old = before.create()
+        repeat(2) { before.edit(old, NAME); before.export() }
+        val after = w.Device("A-new", id = "A", recovered = true)
+        w.syncthing.session("A", "A-new")
+        val fresh = after.create()
+        repeat(3) { after.edit(fresh, NAME); after.export() } // written before the first import, as a person may
+        after.import()
+
+        assertEquals(setOf(old, fresh), after.rows().keys, "the history written before the database was made anew is back")
+    }
+
     @Test
     fun aPurgeReachesAPeerAndOutlivesCompaction() {
         // Segments of one line, compacted every two, so three edits compact.

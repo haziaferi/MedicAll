@@ -310,7 +310,9 @@ internal class FolderSync(
         dao.clearOutbox(upTo = pending.maxOf { it.n })
 
         val held = segments.toSet() + (first..seq)
-        if (held.size >= snapshotEvery) {
+        // A database made anew has not read its own files back yet ([readOwn]): a snapshot of it now would
+        // replace the segments that hold its history, so compaction waits for the first import.
+        if (held.size >= snapshotEvery && !readOwn) {
             folder.replace(FolderLayout.snapshot(device, seq), snapshotOfEverything())
             held.forEach { folder.delete(FolderLayout.segment(device, it)) }
             // Not [seq] itself: after a crash mid-compaction the new snapshot can take the old one's name.

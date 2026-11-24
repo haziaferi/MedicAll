@@ -22,6 +22,7 @@ import com.hazia.medicall.data.ProfileInfo
 import com.hazia.medicall.data.blob.DirectoryBlobStore
 import com.hazia.medicall.data.deviceId
 import com.hazia.medicall.data.openEncryptedDatabase
+import com.hazia.medicall.data.ownLogRead
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.Instant
@@ -128,8 +129,9 @@ class HarnessActivity : Activity() {
                 // The key folder moved past this cipher (a key-file clash settled, or the passphrase changed on another
                 // device): open again with the kept passphrase; if that is refused, the person types the new one.
                 if (!r.unlockAgain) "synced" else {
-                    val kept = KeyVault(this).loadPassphrase() ?: error("synced; the key folder changed: type the passphrase")
-                    "synced; the key folder changed. " + unlock(kept, typedNow = false)
+                    val kept = KeyVault(this).loadPassphrase()
+                    if (kept == null) "synced; the key folder changed: type the passphrase"
+                    else "synced; the key folder changed. " + unlock(kept, typedNow = false)
                 }
             }
         }
@@ -203,7 +205,8 @@ class HarnessActivity : Activity() {
     /** On start: unlocks with the passphrase the vault keeps, when there is one and the sync folder is picked. Worker thread. */
     private fun unlockFromVault() {
         if (core != null || prefs.getString(KEY_SYNC, null) == null) return
-        val kept = KeyVault(this).loadPassphrase() ?: return
+        val kept = runCatching { KeyVault(this).loadPassphrase() }
+            .getOrElse { ui { lastMessage = "The key store did not answer: ${it.message ?: it}. Try again." }; return } ?: return
         val said = unlock(kept, typedNow = false)
         ui { lastMessage = said }
     }
@@ -222,13 +225,20 @@ class HarnessActivity : Activity() {
             val folder = syncFolder(device)
             check(folder.reachable()) { "The sync folder cannot be reached." }
             val database = db ?: run {
-                val key = KeyVault(this).databaseKey()
-                openEncryptedDatabase(this, key.bytes, setAsideExisting = key.isNew).also { recovered = it.recovered }.database.also { db = it }
+                val vault = KeyVault(this)
+                val key = vault.databaseKey()
+                val open = openEncryptedDatabase(this, key.bytes, setAsideExisting = key.isNew)
+                // Stored only once the database opens with it: a crash before leaves no key that opens nothing.
+                if (key.isNew) vault.store(key.bytes)
+                key.bytes.fill(0)
+                recovered = open.recovered
+                open.database.also { db = it }
             }
             val opened = runBlocking {
                 MedicAllCore.open(
                     database, folder, device, phrase, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
                     recovered = recovered,
+                    ownLogRead = { ownLogRead(this@HarnessActivity); recovered = false },
                 )
             }
             when (opened) {

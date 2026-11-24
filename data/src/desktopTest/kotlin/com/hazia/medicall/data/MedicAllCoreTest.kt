@@ -301,6 +301,49 @@ class MedicAllCoreTest {
         assertEquals(1, assertNotNull(c.restoreBackup(backups), "the sync passphrase opens it").rows)
     }
 
+    // A closed core has cleared its passphrase: it refuses to seal or open a backup with what is left.
+    @Test
+    fun aClosedCoreRefusesBackups() = runBlocking {
+        val a = device("A")
+        a.close()
+        assertFailsWith<IllegalStateException> { a.backUp(backups) }
+        assertFailsWith<IllegalStateException> { a.restoreBackup(backups) }
+        assertFailsWith<IllegalStateException> { a.checkFiles(backups) }
+        assertTrue(backupRoot.toFile().list()!!.isEmpty(), "nothing was written")
+    }
+
+    // SPEC:R109 a key file that cannot be read for a moment is not reported as a passphrase change.
+    @Test
+    fun anUnreadableKeyFileIsNotAPassphraseChange_SPEC_R109() = runBlocking {
+        val a = device("A")
+        val keyFile = syncRoot.resolve("keys/keyinfo.json").toFile()
+        val bytes = keyFile.readBytes()
+        keyFile.delete()
+        assertEquals(MedicAllCore.KEY_FILE_UNREADABLE, assertIs<BackupResult.Failed>(a.backUp(backups)).reason)
+        keyFile.writeBytes(bytes)
+        assertIs<BackupResult.Written>(a.backUp(backups))
+        Unit
+    }
+
+    // SPEC:R10 a database made anew reads its own log back at the first sync, and only then says so (the shell
+    // then clears its lasting mark), so a restart before that sync reads it back still.
+    @Test
+    fun aRecoveredDatabaseSaysWhenItsOwnLogIsRead_SPEC_R10() = runBlocking {
+        var said = 0
+        val folder = DirectorySyncFolder(syncRoot)
+        val dir = tmp.newFolder("R")
+        val db = openMedicAllDatabase(File(dir, "medicall.db")).database.also { opened += it }
+        val core = assertIs<Opened.Ready>(
+            MedicAllCore.open(db, folder, "R", passphrase, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"),
+                recovered = true, ownLogRead = { said++ }),
+        ).core
+        assertEquals(0, said, "not before the first import")
+        core.syncNow()
+        assertEquals(1, said)
+        core.syncNow()
+        assertEquals(1, said, "once")
+    }
+
     // SPEC:R109 a passphrase change made on another device is noticed: this device writes no backup under the old
     // passphrase, the old one no longer opens, and the new one does and seals the next backup.
     @Test

@@ -4,6 +4,7 @@ import androidx.room.useReaderConnection
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hazia.medicall.data.openEncryptedDatabase
+import com.hazia.medicall.data.ownLogRead
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
@@ -27,6 +28,7 @@ class EncryptedDatabaseTest {
 
     @After fun clean() {
         context.getDatabasePath(name).parentFile?.listFiles { f -> f.name.startsWith(name) }?.forEach { it.delete() }
+        ownLogRead(context, name)
         File(context.filesDir, "vault-test.sealed").delete()
         File(context.filesDir, "vault-test-passphrase.sealed").delete()
     }
@@ -80,16 +82,62 @@ class EncryptedDatabaseTest {
         assertFalse("the key file is apart and untouched", keyFile.exists())
     }
 
-    // SPEC:R10 the database key is made once, on first use, and the same key comes back after a restart.
+    // SPEC:R10 the database key is made once, kept once the database opens with it, and comes back after a restart.
     @Test
     fun databaseKeyIsMadeOnceAndKept_SPEC_R10() {
         val file = File(context.filesDir, "vault-test.sealed")
         val first = KeyVault(context, file).databaseKey()
         assertTrue("an empty vault makes a key", first.isNew)
         assertEquals(32, first.bytes.size)
+        assertFalse("a new key is not stored before the caller keeps it", file.exists())
+        KeyVault(context, file).store(first.bytes)
         val again = KeyVault(context, file).databaseKey()
         assertFalse("a kept key is not new", again.isNew)
         assertArrayEquals(first.bytes, again.bytes)
+    }
+
+    // SPEC:R10 a key store that fails for a moment is not taken for a lost key: nothing is replaced or set aside.
+    @Test
+    fun aKeyStoreErrorIsNotALostKey_SPEC_R10() {
+        val file = File(context.filesDir, "vault-test.sealed")
+        KeyVault(context, file).store(keyA)
+        val before = file.readBytes()
+        val failing = KeyVault(context, file, wrappingKeyNow = { throw java.security.KeyStoreException("invented hiccup") })
+        assertNotNull("the error reaches the caller", runCatching { failing.databaseKey() }.exceptionOrNull())
+        assertArrayEquals("the sealed key is untouched", before, file.readBytes())
+        assertArrayEquals(keyA, KeyVault(context, file).databaseKey().bytes)
+    }
+
+    // SPEC:R10 a key the key store really lost gives a new key; the sealed file of the old one is kept aside, not overwritten.
+    @Test
+    fun aLostKeyKeepsItsSealedFile_SPEC_R10() {
+        val file = File(context.filesDir, "vault-test.sealed")
+        KeyVault(context, file).store(keyA)
+        val before = file.readBytes()
+        val lost = KeyVault(context, file, wrappingKeyNow = { null }).databaseKey()
+        assertTrue(lost.isNew)
+        val aside = context.filesDir.listFiles { f -> f.name.startsWith("vault-test.sealed.unopenable-") }!!
+        try {
+            assertEquals(1, aside.size)
+            assertArrayEquals(before, aside.single().readBytes())
+            assertFalse("nothing is stored until the caller keeps the new key", file.exists())
+        } finally {
+            aside.forEach { it.delete() }
+        }
+    }
+
+    // SPEC:R10 a database set aside stays marked as made anew until its own log has been read back, across restarts.
+    @Test
+    fun aSetAsideIsRememberedUntilTheOwnLogIsRead_SPEC_R10() {
+        openAndProbe(keyA)
+        openEncryptedDatabase(context, keyB, name, setAsideExisting = true).also { assertTrue(it.recovered) }.database.close()
+        val again = openEncryptedDatabase(context, keyB, name)
+        again.database.close()
+        assertTrue("a restart before the first sync still reads the own log back", again.recovered)
+        ownLogRead(context, name)
+        val later = openEncryptedDatabase(context, keyB, name)
+        later.database.close()
+        assertFalse(later.recovered)
     }
 
     // SPEC:R10 a new key (the old one lost with the key store) sets the old database aside, kept, and starts an
