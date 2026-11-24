@@ -215,7 +215,7 @@ class MedicAllCoreTest {
         a.syncNow()
         b.syncNow()
         a.syncNow()
-        val expected = listOf(ProfileInfo(profile, "Profile A renamed", MedicAllCore.PET, null))
+        val expected = listOf(ProfileInfo(profile, "Profile A renamed", MedicAllCore.PET, null, Module.entries.toSet(), "A", null))
         assertEquals(expected, a.profiles())
         assertEquals(expected, b.profiles())
 

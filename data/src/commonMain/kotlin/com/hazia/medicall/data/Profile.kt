@@ -22,6 +22,29 @@ internal const val NAME = "name"
 internal const val DETAILS = "details"
 internal const val REMOVED = "removed"
 
+/** The modules switched on or off, one Boolean per [Module.key] (SPEC:R14). */
+internal const val MODULES = "modules"
+
+/** The device that created the profile, written once (SPEC:R110: reminders are on by default only there). */
+internal const val ORIGIN = "origin"
+
+/**
+ * The parts of MedicAll a profile can switch on or off (SPEC:R14). Attachments and the emergency card are
+ * always on, so they are not here; [key] is the field name in the profile's [MODULES] group.
+ */
+enum class Module(val key: String) {
+    MEDICINES("medicines"),
+    LOG("log"),
+    RESULTS("results"),
+    CALENDAR("calendar"),
+}
+
+/**
+ * The stamp of a group a row came without: a profile written before the group existed (phase 1, schema 1).
+ * Any real write is later, so it wins the merge; until then the group's defaults hold.
+ */
+internal val NEVER_WRITTEN = Stamp(0, "")
+
 /** One person whose records MedicAll keeps (SPEC:R15): every other record belongs to one. */
 @Entity(tableName = PROFILE)
 internal data class ProfileEntity(
@@ -38,7 +61,26 @@ internal data class ProfileEntity(
     @ColumnInfo(name = "removed_at") val removedAt: Long?,
     @ColumnInfo(name = "removed_hlc") val removedHlc: Long,
     @ColumnInfo(name = "removed_device") val removedDevice: String,
-)
+    @ColumnInfo(name = "modules_medicines", defaultValue = "1") val modulesMedicines: Boolean = true,
+    @ColumnInfo(name = "modules_log", defaultValue = "1") val modulesLog: Boolean = true,
+    @ColumnInfo(name = "modules_results", defaultValue = "1") val modulesResults: Boolean = true,
+    @ColumnInfo(name = "modules_calendar", defaultValue = "1") val modulesCalendar: Boolean = true,
+    @ColumnInfo(name = "modules_hlc", defaultValue = "0") val modulesHlc: Long = NEVER_WRITTEN.hlc,
+    @ColumnInfo(name = "modules_device", defaultValue = "") val modulesDevice: String = NEVER_WRITTEN.device,
+    /** The device that created the profile; null for a profile from before it was recorded. */
+    @ColumnInfo(name = "created_device") val createdDevice: String? = null,
+    @ColumnInfo(name = "origin_hlc", defaultValue = "0") val originHlc: Long = NEVER_WRITTEN.hlc,
+    @ColumnInfo(name = "origin_device", defaultValue = "") val originDevice: String = NEVER_WRITTEN.device,
+) {
+    /** The modules switched on, in [Module]'s order. */
+    val modules: Set<Module>
+        get() = buildSet {
+            if (modulesMedicines) add(Module.MEDICINES)
+            if (modulesLog) add(Module.LOG)
+            if (modulesResults) add(Module.RESULTS)
+            if (modulesCalendar) add(Module.CALENDAR)
+        }
+}
 
 @Dao
 internal interface ProfileDao {
@@ -66,13 +108,29 @@ internal fun ProfileEntity.toRow() = Row(PROFILE, id, mapOf(
     NAME to Group(Stamp(nameHlc, nameDevice), mapOf("name" to name)),
     DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("birth_date" to birthDate, "kind" to kind)),
     REMOVED to Group(Stamp(removedHlc, removedDevice), mapOf("removed_at" to removedAt)),
+    MODULES to Group(Stamp(modulesHlc, modulesDevice), mapOf(
+        Module.MEDICINES.key to modulesMedicines,
+        Module.LOG.key to modulesLog,
+        Module.RESULTS.key to modulesResults,
+        Module.CALENDAR.key to modulesCalendar,
+    )),
+    ORIGIN to Group(Stamp(originHlc, originDevice), mapOf("created_device" to createdDevice)),
 ))
 
-/** Throws when [this] is not a profile this version can read. */
+/** A new profile's [MODULES] group: every module on (SPEC:R14, provisional default). */
+internal fun allModulesOn(): Map<String, Any?> = Module.entries.associate { it.key to true }
+
+/**
+ * Throws when [this] is not a profile this version can read. A row without [MODULES] or [ORIGIN] (written
+ * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN].
+ */
 internal fun Row.toProfileEntity(): ProfileEntity {
     val name = groups.getValue(NAME)
     val details = groups.getValue(DETAILS)
     val removed = groups.getValue(REMOVED)
+    val modules = groups[MODULES] ?: Group(NEVER_WRITTEN, allModulesOn())
+    val origin = groups[ORIGIN] ?: Group(NEVER_WRITTEN, mapOf("created_device" to null))
+    fun module(m: Module) = modules.values[m.key] as Boolean? ?: true
     return ProfileEntity(
         id = id,
         name = name.values["name"] as String,
@@ -85,5 +143,14 @@ internal fun Row.toProfileEntity(): ProfileEntity {
         removedAt = removed.values["removed_at"] as Long?,
         removedHlc = removed.stamp.hlc,
         removedDevice = removed.stamp.device,
+        modulesMedicines = module(Module.MEDICINES),
+        modulesLog = module(Module.LOG),
+        modulesResults = module(Module.RESULTS),
+        modulesCalendar = module(Module.CALENDAR),
+        modulesHlc = modules.stamp.hlc,
+        modulesDevice = modules.stamp.device,
+        createdDevice = origin.values["created_device"] as String?,
+        originHlc = origin.stamp.hlc,
+        originDevice = origin.stamp.device,
     )
 }

@@ -28,10 +28,26 @@ import com.hazia.medicall.data.sync.ImportReport
 import com.hazia.medicall.data.sync.SyncFolder
 import com.hazia.medicall.data.sync.loadClock
 import java.io.File
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
-/** A profile as [MedicAllCore.profiles] lists it; [removedAt] is set while it is in the bin. */
-data class ProfileInfo(val id: String, val name: String, val kind: String, val removedAt: Long?)
+/**
+ * A profile as [MedicAllCore.profiles] lists it (SPEC:R14): [birthDate] an ISO date or null, [modules] those
+ * switched on, [createdDevice] the device that made it (null for a profile from before it was recorded),
+ * [removedAt] set while it is in the bin.
+ */
+data class ProfileInfo(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val birthDate: String?,
+    val modules: Set<Module>,
+    val createdDevice: String?,
+    val removedAt: Long?,
+)
 
 /**
  * What [MedicAllCore.syncNow] did: [imported] is the import's report. [unlockAgain] is true when the key
@@ -72,7 +88,7 @@ data class FileInfo(val id: String, val profileId: String, val name: String, val
 class MedicAllCore private constructor(
     private val db: MedicAllDatabase,
     folder: SyncFolder,
-    device: String,
+    private val device: String,
     clock: HybridClock,
     private val cipher: LineCipher,
     private val passphrase: CharArray,
@@ -92,38 +108,93 @@ class MedicAllCore private constructor(
     private val writes = LocalWrites(db, clock)
     private val profiles = db.profileDao()
     private val refs = db.blobRefDao()
+    private val onDevice = db.profileDeviceDao()
     private val blobs = Blobs(writes, db, blobStore, cipher)
     private val bin = Bin(writes, db, wallMillis)
     private val blobSync = BlobSync(db, folder, blobStore, cipher, wallMillis)
     private val sync = FolderSync(db, folder, device, clock, writes.tables, cipher, wallMillis, recovered = recovered)
     private val restorer = BackupRestore(writes, blobs, SevenZip, wallMillis)
 
-    /** A new profile named [name], of [kind] (SPEC:R15), every group stamped with one tick; returns its id. */
-    suspend fun addProfile(name: String, kind: String = PERSON): String {
+    /**
+     * A new profile named [name], of [kind], born on [birthDate] (SPEC:R14, R15), with every module on and this
+     * device as its origin (SPEC:R110), every group stamped with one tick; returns its id. A [birthDate] that
+     * is not an ISO date, or is after today, throws an [IllegalArgumentException].
+     */
+    suspend fun addProfile(name: String, kind: String = PERSON, birthDate: String? = null): String {
+        checkBirthDate(birthDate)
         val id = Ids.new()
         writes.write(mapOf(PROFILE to listOf(id))) { store ->
             val s = writes.clock.tick()
             writes.merger.created(store, Row(PROFILE, id, mapOf(
                 NAME to Group(s, mapOf("name" to name)),
-                DETAILS to Group(s, mapOf("birth_date" to null, "kind" to kind)),
+                DETAILS to Group(s, mapOf("birth_date" to birthDate, "kind" to kind)),
                 REMOVED to Group(s, mapOf("removed_at" to null)),
+                MODULES to Group(s, allModulesOn()),
+                ORIGIN to Group(s, mapOf("created_device" to device)),
             )))
         }
         return id
     }
 
+    /**
+     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Only the field
+     * changes: the kind is the one the row holds inside the write's transaction, so a peer's change of kind that an
+     * import brings in meanwhile is kept.
+     */
+    suspend fun setBirthDate(id: String, birthDate: String?) {
+        checkBirthDate(birthDate)
+        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate) }
+    }
+
+    /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
+    suspend fun setModule(id: String, module: Module, on: Boolean) =
+        writes.edit(PROFILE, id, MODULES) { mapOf(module.key to on) }
+
+    /**
+     * Whether profile [profileId]'s reminders fire on this device (SPEC:R110): as set here, or by default only on
+     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled.
+     */
+    suspend fun remindersHere(profileId: String): Boolean =
+        onDevice.get(profileId)?.reminders ?: (profile(profileId).createdDevice == device)
+
+    /** Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. */
+    suspend fun setRemindersHere(profileId: String, on: Boolean) {
+        profile(profileId)
+        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(reminders = on))
+    }
+
+    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default. */
+    suspend fun shownHere(profileId: String): Boolean = onDevice.get(profileId)?.shown ?: run { profile(profileId); true }
+
+    /** Sets [shownHere] on this device alone. */
+    suspend fun setShownHere(profileId: String, on: Boolean) {
+        profile(profileId)
+        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(shown = on))
+    }
+
+    private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
+
+    /** SPEC:R14: a birth date is a date, never an age, and not after today in this core's time zone. */
+    private fun checkBirthDate(birthDate: String?) {
+        if (birthDate == null) return
+        val date = try {
+            LocalDate.parse(birthDate, DateTimeFormatter.ISO_LOCAL_DATE)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("not a date: $birthDate", e)
+        }
+        require(!date.isAfter(Instant.ofEpochMilli(wallMillis()).atZone(zone).toLocalDate())) { "a birth date after today: $birthDate" }
+    }
+
     /** Renames profile [id]: its name group only, so a change of kind elsewhere survives the merge (SPEC:R16). */
     suspend fun rename(id: String, name: String) = writes.edit(PROFILE, id, NAME) { mapOf("name" to name) }
 
-    /** Sets profile [id]'s kind: its details group, apart from the name, keeping the birth date it has. */
-    suspend fun changeKind(id: String, kind: String) {
-        val birthDate = profiles.profiles(listOf(id)).singleOrNull()?.birthDate
-        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate, "kind" to kind) }
-    }
+    /** Sets profile [id]'s kind: its details group, apart from the name; the birth date is the one the row holds inside the write. */
+    suspend fun changeKind(id: String, kind: String) = writes.edit(PROFILE, id, DETAILS) { mapOf("kind" to kind) }
 
     /** Every profile, the bin's included, by name then id. */
     suspend fun profiles(): List<ProfileInfo> =
-        profiles.allProfiles().map { ProfileInfo(it.id, it.name, it.kind, it.removedAt) }.sortedWith(compareBy({ it.name }, { it.id }))
+        profiles.allProfiles().map { ProfileInfo(it.id, it.name, it.kind, it.birthDate, it.modules, it.createdDevice, it.removedAt) }
+            .sortedWith(compareBy({ it.name }, { it.id }))
 
     /** Stores [bytes] for [profileId] as [name] of type [mime] ([Blobs.add]); returns the file reference's id. */
     suspend fun addFile(profileId: String, name: String, mime: String, bytes: ByteArray): String = blobs.add(profileId, name, mime, bytes)
