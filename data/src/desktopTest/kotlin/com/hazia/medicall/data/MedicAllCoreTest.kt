@@ -48,7 +48,7 @@ class MedicAllCoreTest {
     private val backups by lazy { DirectoryBackupTarget(backupRoot) }
 
     /** A device as the harness makes one: the passphrase unlocks (or makes) the key file, then the core is built. */
-    private fun device(name: String): MedicAllCore = Phone(name, DirectorySyncFolder(syncRoot)).unlock()
+    private fun device(name: String, phrase: CharArray = passphrase): MedicAllCore = Phone(name, DirectorySyncFolder(syncRoot)).unlock(phrase)
 
     /** A device's database and stored files, kept across [unlock]s, as a shell keeps them when it unlocks again. */
     private inner class Phone(
@@ -60,10 +60,12 @@ class MedicAllCoreTest {
         private val dir = tmp.newFolder(dirName)
         private val db = openMedicAllDatabase(File(dir, "medicall.db")).database.also { opened += it }
 
-        /** Unlocks (or makes) the key file with the passphrase and builds the core over this device's database. */
-        fun unlock(): MedicAllCore = runBlocking {
-            val unlocked = assertIs<Unlock.Unlocked>(MedicAllCore.unlockOrCreate(folder, passphrase, name))
-            MedicAllCore.open(db, folder, name, unlocked.cipher, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), wall, ZoneOffset.UTC)
+        /** Unlocks (or makes) the key file with [phrase] and builds the core over this device's database. */
+        fun unlock(phrase: CharArray = passphrase): MedicAllCore = assertIs<Opened.Ready>(open(phrase)).core
+
+        /** What [MedicAllCore.open] gives for [phrase]. */
+        fun open(phrase: CharArray): Opened = runBlocking {
+            MedicAllCore.open(db, folder, name, phrase, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), wall, ZoneOffset.UTC)
         }
     }
 
@@ -222,16 +224,16 @@ class MedicAllCoreTest {
         b.syncNow()
         a.syncNow()
         assertContentEquals(testFile, a.readFile(ref))
-        val check = a.checkFiles(backups, passphrase)
+        val check = a.checkFiles(backups)
         assertEquals(1, check.checked)
         assertTrue(check.damaged.isEmpty(), "$check")
 
         // Backup and restore (SPEC:R22) on a fresh device.
-        val written = assertIs<BackupResult.Written>(a.backUp(backups, passphrase))
+        val written = assertIs<BackupResult.Written>(a.backUp(backups))
         assertEquals(BackupWriter.LATEST_NAME, written.name)
         assertEquals(1, written.files)
         val c = device("C")
-        val restored = assertNotNull(c.restoreBackup(backups, passphrase))
+        val restored = assertNotNull(c.restoreBackup(backups))
         assertEquals(2, restored.rows)
         assertEquals(1, restored.files)
         assertEquals(expected, c.profiles())
@@ -262,20 +264,115 @@ class MedicAllCoreTest {
         assertContentEquals(before, syncRoot.resolve("keys/keyinfo.json").toFile().readBytes())
     }
 
-    // SPEC:R10 each device's database key comes from the passphrase and differs between devices.
+    // SPEC:R10 the database key is random, apart from the passphrase: 32 bytes, never the same twice.
     @Test
-    fun databaseKeyIsPerDevice_SPEC_R10() {
-        val one = MedicAllCore.databaseKey(passphrase, "device-1")
+    fun databaseKeyIsRandom_SPEC_R10() {
+        val one = MedicAllCore.newDatabaseKey()
         assertEquals(32, one.size)
-        assertContentEquals(one, MedicAllCore.databaseKey(passphrase, "device-1"))
-        assertTrue(!one.contentEquals(MedicAllCore.databaseKey(passphrase, "device-2")))
+        assertFalse(one.contentEquals(MedicAllCore.newDatabaseKey()))
     }
 
     // An empty backup folder is reported, not restored from.
     @Test
     fun restoreFromAnEmptyFolderIsRefused() = runBlocking {
         val a = device("A")
-        assertFailsWith<IllegalStateException> { a.restoreBackup(backups, passphrase) }
+        assertFailsWith<IllegalStateException> { a.restoreBackup(backups) }
+        Unit
+    }
+
+    // SPEC:R109 the core is built from the passphrase: another passphrase builds nothing and changes no key file.
+    @Test
+    fun openRefusesAWrongPassphrase_SPEC_R109() {
+        device("A")
+        val before = syncRoot.resolve("keys/keyinfo.json").toFile().readBytes()
+        val refused = assertIs<Opened.Refused>(Phone("B", DirectorySyncFolder(syncRoot)).open("another-invented-phrase".toCharArray()))
+        assertEquals(Unlock.WrongPassphrase, refused.reason)
+        assertContentEquals(before, syncRoot.resolve("keys/keyinfo.json").toFile().readBytes())
+    }
+
+    // SPEC:R109 a backup is sealed with the passphrase that unlocked sync, which the call no longer takes.
+    @Test
+    fun backupUsesThePassphraseThatUnlockedSync_SPEC_R109() = runBlocking {
+        val a = device("A")
+        a.addProfile("Profile A")
+        assertIs<BackupResult.Written>(a.backUp(backups))
+        val c = device("C")
+        assertNull(c.restoreBackup(backups, "another-invented-phrase".toCharArray()), "another passphrase does not open it")
+        assertEquals(1, assertNotNull(c.restoreBackup(backups), "the sync passphrase opens it").rows)
+    }
+
+    // A closed core has cleared its passphrase: it refuses to seal or open a backup with what is left.
+    @Test
+    fun aClosedCoreRefusesBackups() = runBlocking {
+        val a = device("A")
+        a.close()
+        assertFailsWith<IllegalStateException> { a.backUp(backups) }
+        assertFailsWith<IllegalStateException> { a.restoreBackup(backups) }
+        assertFailsWith<IllegalStateException> { a.checkFiles(backups) }
+        assertTrue(backupRoot.toFile().list()!!.isEmpty(), "nothing was written")
+    }
+
+    // SPEC:R109 a key file that cannot be read for a moment is not reported as a passphrase change.
+    @Test
+    fun anUnreadableKeyFileIsNotAPassphraseChange_SPEC_R109() = runBlocking {
+        val a = device("A")
+        val keyFile = syncRoot.resolve("keys/keyinfo.json").toFile()
+        val bytes = keyFile.readBytes()
+        keyFile.delete()
+        assertEquals(MedicAllCore.KEY_FILE_UNREADABLE, assertIs<BackupResult.Failed>(a.backUp(backups)).reason)
+        keyFile.writeBytes(bytes)
+        assertIs<BackupResult.Written>(a.backUp(backups))
+        Unit
+    }
+
+    // SPEC:R10 a database made anew reads its own log back at the first sync, and only then says so (the shell
+    // then clears its lasting mark), so a restart before that sync reads it back still.
+    @Test
+    fun aRecoveredDatabaseSaysWhenItsOwnLogIsRead_SPEC_R10() = runBlocking {
+        var said = 0
+        val folder = DirectorySyncFolder(syncRoot)
+        val dir = tmp.newFolder("R")
+        val db = openMedicAllDatabase(File(dir, "medicall.db")).database.also { opened += it }
+        val core = assertIs<Opened.Ready>(
+            MedicAllCore.open(db, folder, "R", passphrase, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"),
+                recovered = true, ownLogRead = { said++ }),
+        ).core
+        assertEquals(0, said, "not before the first import")
+        core.syncNow()
+        assertEquals(0, said, "no own log in the folder yet: still waiting")
+        core.addProfile("Profile R")
+        core.syncNow() // exports the own log, then reads it back
+        assertEquals(1, said)
+        core.syncNow()
+        assertEquals(1, said, "once")
+    }
+
+    // SPEC:R109 a passphrase change made on another device is noticed: this device writes no backup under the old
+    // passphrase, the old one no longer opens, and the new one does and seals the next backup.
+    @Test
+    fun peerPassphraseChangeIsNoticed_SPEC_R109() = runBlocking {
+        val newPhrase = "invented-new-passphrase".toCharArray()
+        val phoneA = Phone("A", DirectorySyncFolder(syncRoot))
+        val a = phoneA.unlock()
+        val b = device("B")
+        a.addProfile("Profile A")
+        a.syncNow()
+        b.syncNow()
+        assertIs<BackupResult.Written>(a.backUp(backups))
+        val before = backupRoot.resolve(BackupWriter.LATEST_NAME).toFile().readBytes()
+
+        KeyFolder(DirectorySyncFolder(syncRoot)).change(passphrase, newPhrase) // B's change, as the owed flow will make it
+        assertTrue(a.syncNow().unlockAgain, "A notices the folder's key moved on")
+        val refused = assertIs<BackupResult.Failed>(a.backUp(backups))
+        assertEquals(MedicAllCore.PASSPHRASE_CHANGED, refused.reason)
+        assertContentEquals(before, backupRoot.resolve(BackupWriter.LATEST_NAME).toFile().readBytes(), "nothing was written")
+
+        assertEquals(Unlock.WrongPassphrase, assertIs<Opened.Refused>(phoneA.open(passphrase)).reason)
+        val again = phoneA.unlock(newPhrase)
+        assertIs<BackupResult.Written>(again.backUp(backups))
+        val c = device("C-new", newPhrase)
+        assertNull(c.restoreBackup(backups, passphrase), "the old passphrase no longer opens the new backup")
+        assertNotNull(c.restoreBackup(backups), "the new one does")
         Unit
     }
 }

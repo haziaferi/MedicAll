@@ -16,11 +16,13 @@ import com.hazia.medicall.core.crypto.Unlock
 import com.hazia.medicall.data.BLOB_REF
 import com.hazia.medicall.data.MedicAllCore
 import com.hazia.medicall.data.MedicAllDatabase
+import com.hazia.medicall.data.Opened
 import com.hazia.medicall.data.PROFILE
 import com.hazia.medicall.data.ProfileInfo
 import com.hazia.medicall.data.blob.DirectoryBlobStore
 import com.hazia.medicall.data.deviceId
 import com.hazia.medicall.data.openEncryptedDatabase
+import com.hazia.medicall.data.ownLogRead
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.time.Instant
@@ -32,9 +34,9 @@ import java.util.concurrent.Executors
  * any screen design. Each button runs on one background thread, in the order pressed.
  *
  * The folders are picked through the Storage Access Framework with persistable read and write grants,
- * and remembered across starts. The passphrase unlocks (or makes) the key file in the sync folder; the
- * database key derived from it, and the passphrase itself, are kept sealed by [KeyVault] (SPEC:R109), so
- * on the next start the harness unlocks sync, the database and the backups without asking.
+ * and remembered across starts. The database opens with its own random key ([KeyVault.databaseKey],
+ * SPEC:R10); the passphrase unlocks (or makes) the key file in the sync folder and seals the backups, and
+ * is kept sealed by [KeyVault] (SPEC:R109), so on the next start the harness opens everything without asking.
  *
  * "Edit name", "Edit kind", "Add test file" and "Remove" act on the first live profile by name;
  * "Restore" on the profile most recently put in the bin. The text field gives "Add test profile" and
@@ -53,7 +55,6 @@ class HarnessActivity : Activity() {
     // Touched on the worker thread only.
     private var db: MedicAllDatabase? = null
     private var core: MedicAllCore? = null
-    private var passphrase: CharArray? = null
 
     // The status line: the last report of each kind, and the last message. Main thread only.
     private var lastImport = "-"
@@ -125,23 +126,27 @@ class HarnessActivity : Activity() {
             run("Sync now") { c ->
                 val r = c.syncNow()
                 ui { lastImport = "$r" }
-                // The key folder moved past this cipher (a key-file clash settled): unlock again with the kept passphrase.
-                val again = if (r.unlockAgain) passphrase?.copyOf() else null
-                if (again == null) "synced" else { unlock(again, typedNow = false); "synced; the key folder changed, so it unlocked again" }
+                // The key folder moved past this cipher (a key-file clash settled, or the passphrase changed on another
+                // device): open again with the kept passphrase; if that is refused, the person types the new one.
+                if (!r.unlockAgain) "synced" else {
+                    val kept = KeyVault(this).loadPassphrase()
+                    if (kept == null) "synced; the key folder changed: type the passphrase"
+                    else "synced; the key folder changed. " + unlock(kept, typedNow = false)
+                }
             }
         }
         button(column, "Back up now") {
-            run("Back up now") { c -> c.backUp(backupTarget(), secret()).also { r -> ui { lastBackup = "$r" } }; "backup done" }
+            run("Back up now") { c -> c.backUp(backupTarget()).also { r -> ui { lastBackup = "$r" } }; "backup done" }
         }
         button(column, "Restore backup") {
             run("Restore backup") { c ->
-                val r = c.restoreBackup(backupTarget(), secret())
+                val r = c.restoreBackup(backupTarget())
                 ui { lastRestore = r?.toString() ?: "null (wrong passphrase, or not a MedicAll archive)" }
                 "restore done"
             }
         }
         button(column, "Check files") {
-            run("Check files") { c -> c.checkFiles(backupTarget(), secret()).also { r -> ui { lastIntegrity = "$r" } }; "check done" }
+            run("Check files") { c -> c.checkFiles(backupTarget()).also { r -> ui { lastIntegrity = "$r" } }; "check done" }
         }
 
         setContentView(ScrollView(this).apply {
@@ -154,7 +159,7 @@ class HarnessActivity : Activity() {
 
     override fun onDestroy() {
         worker.execute {
-            passphrase?.fill(' ')
+            core?.close()
             db?.close()
         }
         worker.shutdown()
@@ -194,49 +199,65 @@ class HarnessActivity : Activity() {
         val typed = CharArray(passphraseField.length()) { passphraseField.text[it] }
         passphraseField.text.clear()
         if (typed.size < MIN_PASSPHRASE) return message("The passphrase needs at least $MIN_PASSPHRASE characters.")
-        worker.execute { unlock(typed, typedNow = true); refresh() }
+        worker.execute { val said = unlock(typed, typedNow = true); ui { lastMessage = said }; refresh() }
     }
 
     /** On start: unlocks with the passphrase the vault keeps, when there is one and the sync folder is picked. Worker thread. */
     private fun unlockFromVault() {
         if (core != null || prefs.getString(KEY_SYNC, null) == null) return
-        val kept = KeyVault(this).loadPassphrase() ?: return
-        unlock(kept, typedNow = false)
+        val kept = runCatching { KeyVault(this).loadPassphrase() }
+            .getOrElse { ui { lastMessage = "The key store did not answer: ${it.message ?: it}. Try again." }; return } ?: return
+        val said = unlock(kept, typedNow = false)
+        ui { lastMessage = said }
     }
 
+    /** Set by the first open of the database: whether it set an old database aside. Worker thread only. */
+    private var recovered = false
+
     /**
-     * Unlocks (or makes) the key file with [phrase], then opens the database with the vault's key and builds
-     * the core; a [typedNow] passphrase that unlocked is sealed in the vault. Worker thread.
+     * Opens the database with the vault's key, once (SPEC:R10: it does not depend on the passphrase), then
+     * builds the core from [phrase] (SPEC:R109); a [typedNow] passphrase that opened it is sealed in the
+     * vault. Clears [phrase]. Returns what to tell the person. Worker thread.
      */
-    private fun unlock(phrase: CharArray, typedNow: Boolean) {
+    private fun unlock(phrase: CharArray, typedNow: Boolean): String {
         val outcome = runCatching {
             val device = deviceId(File(filesDir, DEVICE_FILE))
             val folder = syncFolder(device)
             check(folder.reachable()) { "The sync folder cannot be reached." }
-            val cipher = when (val u = MedicAllCore.unlockOrCreate(folder, phrase, device)) {
-                is Unlock.Unlocked -> u.cipher
-                Unlock.KeyFileNotArrived -> error("Another device's key file has not arrived yet: wait for the sync and try again.")
-                else -> error("The key file did not unlock: $u")
+            val database = db ?: run {
+                val vault = KeyVault(this)
+                val key = vault.databaseKey()
+                val open = openEncryptedDatabase(this, key.bytes, setAsideExisting = key.isNew)
+                // Stored only once the database opens with it: a crash before leaves no key that opens nothing.
+                if (key.isNew) vault.store(key.bytes)
+                key.bytes.fill(0)
+                recovered = open.recovered
+                open.database.also { db = it }
             }
-            val vault = KeyVault(this)
-            if (typedNow) vault.storePassphrase(phrase)
-            val key = vault.load() ?: MedicAllCore.databaseKey(phrase, device).also(vault::store)
-            val open = openEncryptedDatabase(this, key)
-            db?.close()
-            db = open.database
-            core = runBlocking {
+            val opened = runBlocking {
                 MedicAllCore.open(
-                    open.database, folder, device, cipher, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
-                    recovered = open.recovered,
+                    database, folder, device, phrase, DirectoryBlobStore(File(filesDir, "blobs").toPath()), File(cacheDir, "work"),
+                    recovered = recovered,
+                    ownLogRead = { ownLogRead(this@HarnessActivity); recovered = false },
                 )
             }
-            passphrase?.fill(' ')
-            passphrase = phrase
-            (if (typedNow) "Unlocked" else "Unlocked with the kept passphrase") + " as device $device" +
-                if (open.recovered) " (an unopenable database was set aside)" else ""
+            when (opened) {
+                is Opened.Ready -> {
+                    if (typedNow) KeyVault(this).storePassphrase(phrase)
+                    core?.close()
+                    core = opened.core
+                    (if (typedNow) "Unlocked" else "Unlocked with the kept passphrase") + " as device $device" +
+                        if (recovered) " (the database was set aside and is filled again from the sync folder)" else ""
+                }
+                is Opened.Refused -> when (opened.reason) {
+                    Unlock.KeyFileNotArrived -> "Another device's key file has not arrived yet: wait for the sync and try again."
+                    Unlock.WrongPassphrase -> "This passphrase does not open the key file (was it changed on another device?): type the current one."
+                    else -> "The key file did not unlock: ${opened.reason}"
+                }
+            }
         }
-        ui { lastMessage = outcome.getOrElse { "Unlock failed: ${it.message ?: it}" } }
-        if (outcome.isFailure) phrase.fill(' ')
+        phrase.fill(' ')
+        return outcome.getOrElse { "Unlock failed: ${it.message ?: it}" }
     }
 
     /** Runs [action] on the core off the main thread, then shows its message, or why it failed. */
@@ -292,7 +313,6 @@ class HarnessActivity : Activity() {
 
     private suspend fun live(c: MedicAllCore): ProfileInfo = c.profiles().firstOrNull { it.removedAt == null } ?: error("No live profile: add one first.")
 
-    private fun secret(): CharArray = passphrase ?: error("Set the passphrase first.")
 
     private fun syncFolder(device: String) = SafSyncFolder(this, tree(KEY_SYNC) ?: error("Pick the sync folder first."), device)
 

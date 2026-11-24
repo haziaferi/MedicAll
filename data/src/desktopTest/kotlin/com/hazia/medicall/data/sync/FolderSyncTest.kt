@@ -16,6 +16,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -158,6 +159,41 @@ class FolderSyncTest {
         assertNotNull(a.rows()[mine])
         assertNotNull(a.rows()[theirs])
         assertTrue(w.syncthing.paths("A").none { ".sync-conflict-" in it })
+    }
+
+    // SPEC:R10 a database made anew (its key lost, or a corrupt file set aside) does not compact its own log before
+    // it has read it back: a snapshot of the new, near-empty database would replace the segments holding its history.
+    @Test
+    fun aRecoveredDatabaseDoesNotCompactBeforeReadingItsOwnLog() {
+        val w = world(segmentBytes = 200, snapshotEvery = 2)
+        val before = w.Device("A")
+        val old = before.create()
+        repeat(2) { before.edit(old, NAME); before.export() }
+        val after = w.Device("A-new", id = "A", recovered = true)
+        w.syncthing.session("A", "A-new")
+        val fresh = after.create()
+        repeat(3) { after.edit(fresh, NAME); after.export() } // written before the first import, as a person may
+        after.import()
+
+        assertEquals(setOf(old, fresh), after.rows().keys, "the history written before the database was made anew is back")
+    }
+
+    // SPEC:R10 a database made anew keeps waiting for its own log while none of it is in the folder (not arrived, or the
+    // listing came back empty): only an import that read it says so, and compaction waits until then.
+    @Test
+    fun aRecoveredDatabaseWaitsUntilItsOwnLogIsThere() {
+        val w = world(segmentBytes = 200, snapshotEvery = 2)
+        val before = w.Device("A")
+        val old = before.create()
+        repeat(2) { before.edit(old, NAME); before.export() }
+
+        val after = w.Device("A-new", id = "A", recovered = true)
+        after.import() // the own log has not arrived in A-new's folder yet
+        assertTrue(after.sync.readingOwnLog, "nothing of the own log was read: still waiting")
+        w.syncthing.session("A", "A-new")
+        after.import()
+        assertFalse(after.sync.readingOwnLog, "the own log was read back")
+        assertEquals(setOf(old), after.rows().keys)
     }
 
     @Test

@@ -301,23 +301,25 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Rule:** The database and every attachment are encrypted on the device. The passphrase is entered once per device and then kept in the platform's key store.
 
-**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
+**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The database key is 32 random bytes made once per device and kept only in the key store, never derived from the passphrase, so a passphrase change (R109) leaves the database as it is; if the key store loses it, the old database is set aside, kept, and an empty one is filled again from the sync folder and the backups (owner, 2026-11-24, review finding M1). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
 
-**Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
+**Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R109 · One passphrase for devices, sync and backups
 
-**Rule:** One passphrase, chosen by the person, protects the database on every device that syncs, the sync logs and the backups; it is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
+**Rule:** One passphrase, chosen by the person, protects the sync logs and the backups of every device that syncs; each device's database has its own key (R10). The passphrase is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
 
 **Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time; a stable passphrase keeps every backup usable for repair (R23), and day-to-day access is the app lock's job (R11).
+
+**Evidence:** Backups are sealed with the passphrase that opened the sync key, which the data layer keeps from the moment it opens; after a change made on another device, this device writes no backup until it is given the new passphrase (`peerPassphraseChangeIsNoticed_SPEC_R109`; owner, 2026-11-24, review finding M2). Not checked: the change screen, its wording and the fresh backups right after a change, which wait for the settings work.
 
 **Acceptance:** A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 
 **Not:** Separate passphrases for sync and backups.
 
-**Since:** 2026-11-23 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R11 · App lock
 
@@ -1553,7 +1555,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R07 · How changes land: `main`'s ruleset requires a pull request and blocks force pushes and deletion. The README states this as its "How changes land" section, and each pull request's description names its method.
 - R08 · Languages: With the phone set to Italian once Italian ships, every string is Italian; with it set to English, no Italian bureaucracy label appears.
 - R09 · Test devices: Each phase's walk record names all three phones.
-- R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
+- R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
 - R109 · One passphrase for devices, sync and backups: A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 - R11 · App lock: With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 - R12 · Network use: The only network call site in the code is the medicine-list download, and it sends no profile data.
