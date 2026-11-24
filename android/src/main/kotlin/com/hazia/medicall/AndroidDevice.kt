@@ -93,8 +93,14 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
                 ownLogRead = { ownLogRead(app, f.databaseName) },
             )
             if (opened is Opened.Ready) {
-                if (key.isNew) vault.store(key.bytes)
-                vault.storePassphrase(passphrase)
+                try {
+                    if (key.isNew) vault.store(key.bytes)
+                    vault.storePassphrase(passphrase)
+                } catch (e: Exception) {
+                    // Not kept: the core goes too, and its copy of the passphrase with it.
+                    opened.core.close()
+                    throw e
+                }
                 databases[f.id] = open.database
                 db = null
             }
@@ -118,7 +124,14 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
             recovered = isRecovering(app, f.databaseName),
             ownLogRead = { ownLogRead(app, f.databaseName) },
         )
-        if (opened is Opened.Ready) KeyVault.forFolder(app, f.id).storePassphrase(passphrase)
+        if (opened is Opened.Ready) {
+            try {
+                KeyVault.forFolder(app, f.id).storePassphrase(passphrase)
+            } catch (e: Exception) {
+                opened.core.close()
+                throw e
+            }
+        }
         return opened
     }
 

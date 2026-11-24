@@ -2,6 +2,7 @@ package com.hazia.medicall.core.lock
 
 import com.hazia.medicall.core.crypto.pbkdf2Sha256
 import com.hazia.medicall.core.crypto.secureRandomBytes
+import kotlin.concurrent.Volatile
 import kotlin.jvm.Synchronized
 
 /** What a PIN attempt gave. */
@@ -34,7 +35,8 @@ class AppLock(
 
     val isOn: Boolean get() = state.pinHash != null
 
-    /** True while the screens must ask for the PIN; a lock that is on starts locked. */
+    /** True while the screens must ask for the PIN; a lock that is on starts locked. Read from any thread. */
+    @Volatile
     var isLocked: Boolean = isOn
         private set
 

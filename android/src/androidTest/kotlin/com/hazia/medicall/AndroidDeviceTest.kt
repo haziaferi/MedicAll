@@ -2,6 +2,7 @@ package com.hazia.medicall
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hazia.medicall.core.crypto.Unlock
 import com.hazia.medicall.data.Opened
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -65,11 +66,48 @@ class AndroidDeviceTest {
     fun aRefusedJoinLeavesNothing_SPEC_R110() = runBlocking {
         val first = device()
         assertTrue(first.device.join("Folder A", treeA.uri.toString(), "invented-passphrase-a".toCharArray()) is Opened.Ready)
-        val dbsBefore = context.databaseList().toSet()
         // A second device (its own settings file) joining the same folder with a wrong passphrase.
         val stranger = AndroidDevice(context, KeyVault(context).sealedFile(File(context.filesDir, "device-test-$run-2.sealed"))).also { made += it }
-        assertTrue(stranger.device.join("Folder A", treeA.uri.toString(), "a-wrong-passphrase-entirely".toCharArray()) is Opened.Refused)
-        assertEquals(dbsBefore, context.databaseList().toSet())
+        val before = appFiles()
+        val refused = stranger.device.join("Folder A", treeA.uri.toString(), "a-wrong-passphrase-entirely".toCharArray())
+        assertEquals(Unlock.WrongPassphrase, (refused as Opened.Refused).reason)
+        // No database, vault file, file store or write journal is left behind.
+        assertEquals(before, appFiles())
         assertTrue(stranger.device.folders().isEmpty())
     }
+
+    @Test
+    fun leavingAFolderSetsItAsideAndKeepsTheOther_SPEC_R110() = runBlocking {
+        val first = device()
+        val a = first.device.join("Folder A", treeA.uri.toString(), "invented-passphrase-a".toCharArray()) as Opened.Ready
+        val b = first.device.join("Folder B", treeB.uri.toString(), "invented-passphrase-b".toCharArray()) as Opened.Ready
+        a.core.addProfile("Profile A")
+        b.core.addProfile("Profile B")
+        val (idA, idB) = first.device.folders().map { it.id }
+        first.device.leave(idA)
+
+        assertEquals(listOf(idB), first.device.folders().map { it.id })
+        // Set aside, not deleted (SPEC:R10): the file is renamed and its key kept; the passphrase is forgotten.
+        assertFalse("medicall-$idA.db" in context.databaseList())
+        assertTrue(context.databaseList().any { it.startsWith("medicall-$idA.db") })
+        assertTrue(KeyVault.forFolder(context, idA).load() != null)
+        assertTrue(KeyVault.forFolder(context, idA).loadPassphrase() == null)
+        first.close()
+
+        val again = device()
+        again.openAll()
+        assertEquals(listOf("Profile B"), again.device.profiles().map { it.second.name })
+        // The left folder is no longer in the registry, so clean() would miss it.
+        context.databaseList().filter { it.startsWith("medicall-$idA.db") }.forEach { context.deleteDatabase(it) }
+        context.filesDir.listFiles { f -> idA in f.name }?.forEach { it.deleteRecursively() }
+        File(context.filesDir, "blobs/$idA").deleteRecursively()
+        File(context.filesDir, "${AndroidDevice.JOURNALS}/$idA").deleteRecursively()
+        Unit
+    }
+
+    /** Every file the app holds in its private storage, with its size. */
+    private fun appFiles(): Set<String> =
+        listOf(context.filesDir, context.getDatabasePath("x").parentFile!!).flatMap { dir ->
+            dir.walk().filter { it.isFile }.map { "${it.path}:${it.length()}" }.toList()
+        }.toSet()
 }

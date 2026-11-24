@@ -53,8 +53,10 @@ class HarnessActivity : Activity() {
     private lateinit var lockPassphraseField: EditText
     private lateinit var lockStatus: TextView
 
+    // Set on the worker thread; the lock is read from the main thread too.
+    @Volatile private var phone: AndroidDevice? = null
+
     // Touched on the worker thread only.
-    private var phone: AndroidDevice? = null
     private var folderId: String? = null
     private var profileId: String? = null
 
@@ -67,7 +69,8 @@ class HarnessActivity : Activity() {
         super.onCreate(savedInstanceState)
         mainView = buildMain()
         lockView = buildLock()
-        setContentView(mainView)
+        // Nothing of a folder shows until the first lock check has run (SPEC:R11).
+        setContentView(TextView(this).apply { text = "Starting…"; setPadding(32, 32, 32, 32) })
         show()
         work {
             val p = AndroidDevice(this).also { phone = it }
@@ -77,17 +80,32 @@ class HarnessActivity : Activity() {
             "Opened ${opened.count { it.value.getOrNull() is Opened.Ready }} of ${p.device.folders().size} folders as device ${p.deviceId}" +
                 failed.joinToString("") { "\n$it" }
         }
-        work { showLockIfLocked(); null }
+        worker.execute {
+            val locked = phone?.device?.lock?.isLocked == true
+            runOnUiThread { if (locked) showLock() else setContentView(mainView) }
+            if (!locked) refresh()
+        }
     }
 
+    // The lock's clock calls run here on the main thread, not behind the worker's queue: a long sync must not
+    // delay the moment the app went to the background, nor the lock screen on return (SPEC:R11).
     override fun onStart() {
         super.onStart()
-        worker.execute { phone?.device?.lock?.onForeground(); showLockIfLocked() }
+        val lock = phone?.device?.lock ?: return
+        lock.onForeground()
+        if (lock.isLocked) showLock()
     }
 
     override fun onStop() {
-        worker.execute { phone?.device?.lock?.onBackground() }
+        phone?.device?.lock?.onBackground()
         super.onStop()
+    }
+
+    /** Replaces the whole screen with the lock screen and blanks the listing behind it. Main thread. */
+    private fun showLock() {
+        stateView.text = ""
+        lockStatus.text = ""
+        setContentView(lockView)
     }
 
     override fun onDestroy() {
@@ -164,29 +182,28 @@ class HarnessActivity : Activity() {
         button(column, "Unlock") {
             val pin = CharArray(pinField.length()) { pinField.text[it] }
             pinField.text.clear()
-            worker.execute { val v = lock().unlock(pin); pin.fill(' '); afterAttempt(v) }
+            attempt { try { lock().unlock(pin) } finally { pin.fill(' ') } }
         }
         button(column, "Use fingerprint") {
             BiometricGate.ask(this, "Unlock MedicAll", "Use the PIN",
-                passed = { worker.execute { runCatching { lock().unlockedByFingerprint() }; afterAttempt(Verdict.Ok) } },
+                passed = { attempt { lock().unlockedByFingerprint(); Verdict.Ok } },
                 notPassed = { reason -> lockStatus.text = reason })
         }
         lockPassphraseField = secretField("Forgot the PIN? A folder's passphrase").also(column::addView)
         button(column, "Forgot PIN") {
             val typed = CharArray(lockPassphraseField.length()) { lockPassphraseField.text[it] }
             lockPassphraseField.text.clear()
-            worker.execute { val v = need().device.removeForgottenPin(typed); typed.fill(' '); afterAttempt(v, "The PIN is removed: set a new one.") }
+            attempt("The PIN is removed: set a new one.") { try { need().device.removeForgottenPin(typed) } finally { typed.fill(' ') } }
         }
         return ScrollView(this).apply { fitsSystemWindows = true; addView(column) }
     }
 
-    /** Shows the lock screen while the lock is closed. Worker thread. */
-    private fun showLockIfLocked() {
-        val locked = phone?.device?.lock?.isLocked == true
-        runOnUiThread {
-            if (locked) { lockStatus.text = ""; setContentView(lockView) }
-        }
-        if (!locked) refresh()
+    /** Runs a lock-screen try on the worker; a failure (a revoked folder grant, say) is shown, never thrown. */
+    private fun attempt(okText: String = "Unlocked.", tryIt: () -> Verdict) = worker.execute {
+        runCatching(tryIt).fold(
+            onSuccess = { afterAttempt(it, okText) },
+            onFailure = { e -> runOnUiThread { lockStatus.text = "Failed: ${e.message ?: e}" } },
+        )
     }
 
     /** After a PIN, fingerprint or passphrase try: back to the harness on [Verdict.Ok], else why not. Worker thread. */
@@ -295,6 +312,7 @@ class HarnessActivity : Activity() {
     /** Redraws the folders, the selected folder's profiles with their switches, its files and bin, and the lock. Worker thread. */
     private fun refresh() {
         val p = phone ?: return
+        if (p.device.lock.isLocked) return
         val text = runCatching {
             val folders = p.device.folders().joinToString("\n") { f: JoinedFolder ->
                 "${if (f.id == folderId) "> " else "  "}${f.label}${if (p.device.core(f.id) == null) " (not open)" else ""} backup: ${if (f.backupUri == null) "not picked" else "picked"}"
