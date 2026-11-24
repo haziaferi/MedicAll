@@ -309,7 +309,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R109 · One passphrase for devices, sync and backups
 
-**Rule:** One passphrase, chosen by the person, protects the database on every device that syncs, the sync logs and the backups; it is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
+**Rule:** One passphrase, chosen by the person, protects the sync logs and the backups of every device that syncs; each device's database has its own key (R10). The passphrase is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
 
 **Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time; a stable passphrase keeps every backup usable for repair (R23), and day-to-day access is the app lock's job (R11).
 
