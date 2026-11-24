@@ -68,13 +68,20 @@ class FolderRegistry(private val file: SealedFile) {
 
     fun folders(): List<JoinedFolder> = settings.folders
 
-    /** Joins a new folder at [folderUri]; a folder already joined throws an [IllegalStateException]. */
-    fun add(label: String, folderUri: String): JoinedFolder {
-        check(settings.folders.none { it.folderUri == folderUri }) { "this folder is already joined" }
-        val folder = JoinedFolder(Ids.new(), label, folderUri, backupUri = null)
+    /**
+     * Joins a new folder at [folderUri], under [id] (a new one by default); a folder already joined throws an
+     * [IllegalStateException].
+     */
+    fun add(label: String, folderUri: String, id: String = Ids.new()): JoinedFolder {
+        checkNew(folderUri)
+        require(settings.folders.none { it.id == id }) { "folder id $id is taken" }
+        val folder = JoinedFolder(id, label, folderUri, backupUri = null)
         save(settings.copy(folders = settings.folders + folder))
         return folder
     }
+
+    /** Throws an [IllegalStateException] when [folderUri] is already joined. */
+    fun checkNew(folderUri: String) = check(settings.folders.none { it.folderUri == folderUri }) { "this folder is already joined" }
 
     fun rename(id: String, label: String) = change(id) { it.copy(label = label) }
 

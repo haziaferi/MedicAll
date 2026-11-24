@@ -164,6 +164,24 @@ class AppLockTest {
     }
 
     @Test
+    fun aPassphraseTryCountsLikeAPin_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        var asked = 0
+        assertEquals(Verdict.Wrong(4), l.removeForgottenPinIf { asked++; false })
+        assertTrue(l.isOn)
+        repeat(4) { l.removeForgottenPinIf { asked++; false } }
+        // During the wait the passphrase is not even checked.
+        assertEquals(Verdict.Wait(30 * SECOND), l.removeForgottenPinIf { asked++; true })
+        assertEquals(5, asked)
+        now += 30 * SECOND
+        assertEquals(Verdict.Ok, l.removeForgottenPinIf { true })
+        assertFalse(l.isOn)
+        assertFalse(l.isLocked)
+        assertEquals(0, saved.wrongTries)
+    }
+
+    @Test
     fun aForgottenPinIsRemoved_SPEC_R11() {
         lock().setPin(pin)
         val l = lock()

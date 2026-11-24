@@ -99,12 +99,23 @@ class AppLock(
         update(state.copy(fingerprint = on))
     }
 
+    /**
+     * A forgotten PIN (SPEC:R11): [passphraseOpens] says whether the passphrase typed opens a joined sync folder.
+     * It is asked only outside a wait, and a wrong passphrase counts as a wrong PIN, so neither route can be tried
+     * faster than the other. When it opens, the PIN is removed as by [removeForgottenPin].
+     */
+    fun removeForgottenPinIf(passphraseOpens: () -> Boolean): Verdict =
+        attempt(passphraseOpens).also { if (it == Verdict.Ok) removeForgottenPin() }
+
     /** Checks [pin] against the kept hash, counting a wrong one; nothing is checked during a wait. */
-    private fun attempt(pin: CharArray): Verdict {
+    private fun attempt(pin: CharArray): Verdict =
+        attempt { hash(pin, state.salt!!.hexBytes()).constantTimeEquals(state.pinHash!!.hexBytes()) }
+
+    private fun attempt(right: () -> Boolean): Verdict {
         check(isOn) { "no PIN is set" }
         val left = remainingWait()
         if (left > 0) return Verdict.Wait(left)
-        if (hash(pin, state.salt!!.hexBytes()).constantTimeEquals(state.pinHash!!.hexBytes())) {
+        if (right()) {
             update(state.copy(wrongTries = 0, lastWrongAtElapsed = null))
             return Verdict.Ok
         }

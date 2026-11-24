@@ -87,7 +87,7 @@ data class FileInfo(val id: String, val profileId: String, val name: String, val
  */
 class MedicAllCore private constructor(
     private val db: MedicAllDatabase,
-    folder: SyncFolder,
+    private val folder: SyncFolder,
     private val device: String,
     clock: HybridClock,
     private val cipher: LineCipher,
@@ -289,6 +289,19 @@ class MedicAllCore private constructor(
     suspend fun checkFiles(target: BackupTarget): IntegrityReport {
         checkOpen()
         return IntegrityCheck(blobs, target, SevenZip, workDir).run(passphrase)
+    }
+
+    /**
+     * True when [passphrase] opens this sync folder's key file now (SPEC:R109), as a forgotten PIN asks (SPEC:R11).
+     * Nothing is kept: the cipher it makes is dropped, and the caller still owns, and clears, [passphrase].
+     */
+    fun passphraseOpens(passphrase: CharArray): Boolean {
+        val copy = passphrase.copyOf()
+        return try {
+            KeyFolder(folder).unlock(copy) is Unlock.Unlocked
+        } finally {
+            copy.fill(' ')
+        }
     }
 
     /** Clears this core's copy of the passphrase; the backup calls refuse after it. */
