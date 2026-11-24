@@ -108,6 +108,7 @@ class MedicAllCore private constructor(
     private val writes = LocalWrites(db, clock)
     private val profiles = db.profileDao()
     private val refs = db.blobRefDao()
+    private val onDevice = db.profileDeviceDao()
     private val blobs = Blobs(writes, db, blobStore, cipher)
     private val bin = Bin(writes, db, wallMillis)
     private val blobSync = BlobSync(db, folder, blobStore, cipher, wallMillis)
@@ -145,6 +146,30 @@ class MedicAllCore private constructor(
     /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
     suspend fun setModule(id: String, module: Module, on: Boolean) =
         writes.edit(PROFILE, id, MODULES) { mapOf(module.key to on) }
+
+    /**
+     * Whether profile [profileId]'s reminders fire on this device (SPEC:R110): as set here, or by default only on
+     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled.
+     */
+    suspend fun remindersHere(profileId: String): Boolean =
+        onDevice.get(profileId)?.reminders ?: (profile(profileId).createdDevice == device)
+
+    /** Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. */
+    suspend fun setRemindersHere(profileId: String, on: Boolean) {
+        profile(profileId)
+        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(reminders = on))
+    }
+
+    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default. */
+    suspend fun shownHere(profileId: String): Boolean = onDevice.get(profileId)?.shown ?: run { profile(profileId); true }
+
+    /** Sets [shownHere] on this device alone. */
+    suspend fun setShownHere(profileId: String, on: Boolean) {
+        profile(profileId)
+        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(shown = on))
+    }
+
+    private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
 
     /** SPEC:R14: a birth date is a date, never an age, and not after today in this core's time zone. */
     private fun checkBirthDate(birthDate: String?) {
