@@ -17,15 +17,26 @@ import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
  * "file is not a database", which a wrong key and a damaged file share, so it is never set aside
  * automatically: the open throws and the file stays exactly as it was. SQLCipher's own corruption
  * handler does not delete a file it holds a key for (Emivita's EmivitaDatabase, sqlcipher-android 4.19.1).
+ *
+ * [setAsideExisting] is for a key made just now (the key store had none, or lost it): no database made
+ * before can open with it, so an existing file is set aside first, kept, and the result says `recovered`,
+ * which makes the sync read every peer's log again (SPEC:R10).
  */
-fun openEncryptedDatabase(context: Context, key: ByteArray, name: String = DATABASE_NAME): DatabaseOpen<MedicAllDatabase> {
+fun openEncryptedDatabase(
+    context: Context,
+    key: ByteArray,
+    name: String = DATABASE_NAME,
+    setAsideExisting: Boolean = false,
+): DatabaseOpen<MedicAllDatabase> {
     require(key.size == 32) { "the database key is 32 bytes" }
     SqlCipherLibrary.load()
     val app = context.applicationContext
     val file = app.getDatabasePath(name)
     file.parentFile?.mkdirs()
+    val setAside = setAsideExisting && file.exists()
+    if (setAside) setAsideDatabaseFiles(file.path, System.currentTimeMillis())
     val literal = ("x'" + key.joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') } + "'").encodeToByteArray()
-    return openOrRecover(
+    val open = openOrRecover(
         build = {
             Room.databaseBuilder<MedicAllDatabase>(app, name)
                 .openHelperFactory(SupportOpenHelperFactory(literal))
@@ -38,6 +49,7 @@ fun openEncryptedDatabase(context: Context, key: ByteArray, name: String = DATAB
         setAside = { setAsideDatabaseFiles(file.path, System.currentTimeMillis()) },
         isUnopenable = ::isCorruptDatabase,
     )
+    return if (setAside) DatabaseOpen(open.database, recovered = true) else open
 }
 
 /** sqlcipher-android does not load its native library by itself; every process that opens the database needs it once. */

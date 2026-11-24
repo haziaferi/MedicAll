@@ -262,13 +262,12 @@ class MedicAllCoreTest {
         assertContentEquals(before, syncRoot.resolve("keys/keyinfo.json").toFile().readBytes())
     }
 
-    // SPEC:R10 each device's database key comes from the passphrase and differs between devices.
+    // SPEC:R10 the database key is random, apart from the passphrase: 32 bytes, never the same twice.
     @Test
-    fun databaseKeyIsPerDevice_SPEC_R10() {
-        val one = MedicAllCore.databaseKey(passphrase, "device-1")
+    fun databaseKeyIsRandom_SPEC_R10() {
+        val one = MedicAllCore.newDatabaseKey()
         assertEquals(32, one.size)
-        assertContentEquals(one, MedicAllCore.databaseKey(passphrase, "device-1"))
-        assertTrue(!one.contentEquals(MedicAllCore.databaseKey(passphrase, "device-2")))
+        assertFalse(one.contentEquals(MedicAllCore.newDatabaseKey()))
     }
 
     // An empty backup folder is reported, not restored from.

@@ -80,6 +80,47 @@ class EncryptedDatabaseTest {
         assertFalse("the key file is apart and untouched", keyFile.exists())
     }
 
+    // SPEC:R10 the database key is made once, on first use, and the same key comes back after a restart.
+    @Test
+    fun databaseKeyIsMadeOnceAndKept_SPEC_R10() {
+        val file = File(context.filesDir, "vault-test.sealed")
+        val first = KeyVault(context, file).databaseKey()
+        assertTrue("an empty vault makes a key", first.isNew)
+        assertEquals(32, first.bytes.size)
+        val again = KeyVault(context, file).databaseKey()
+        assertFalse("a kept key is not new", again.isNew)
+        assertArrayEquals(first.bytes, again.bytes)
+    }
+
+    // SPEC:R10 a new key (the old one lost with the key store) sets the old database aside, kept, and starts an
+    // empty one marked recovered, so the sync reads every peer's log again.
+    @Test
+    fun newKeySetsTheOldDatabaseAside_SPEC_R10() {
+        openAndProbe(keyA)
+        val file = context.getDatabasePath(name)
+        val before = file.readBytes()
+
+        val open = openEncryptedDatabase(context, keyB, name, setAsideExisting = true)
+        runBlocking { open.database.useReaderConnection { c -> c.usePrepared("SELECT count(*) FROM profile") { it.step() } } }
+        open.database.close()
+
+        assertTrue("the result says the database was set aside", open.recovered)
+        val aside = file.parentFile!!.listFiles { f -> f.name.startsWith("$name.unopenable-") }!!
+        assertEquals(1, aside.size)
+        assertArrayEquals("the old file is kept as it was", before, aside.single().readBytes())
+        openAndProbe(keyB) // the new database opens with the new key
+    }
+
+    // A kept key opens the database as it is: nothing is set aside.
+    @Test
+    fun keptKeyLeavesTheDatabase() {
+        openAndProbe(keyA)
+        val open = openEncryptedDatabase(context, keyA, name, setAsideExisting = false)
+        open.database.close()
+        assertFalse(open.recovered)
+        assertEquals(0, context.getDatabasePath(name).parentFile!!.listFiles { f -> f.name.startsWith("$name.unopenable-") }!!.size)
+    }
+
     @Test
     fun unreadableFileIsKeptNotDeleted() {
         val file = context.getDatabasePath(name)

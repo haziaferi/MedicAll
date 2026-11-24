@@ -301,11 +301,11 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Rule:** The database and every attachment are encrypted on the device. The passphrase is entered once per device and then kept in the platform's key store.
 
-**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
+**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The database key is 32 random bytes made once per device and kept only in the key store, never derived from the passphrase, so a passphrase change (R109) leaves the database as it is; if the key store loses it, the old database is set aside, kept, and an empty one is filled again from the sync folder and the backups (owner, 2026-11-24, review finding M1). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
 
-**Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
+**Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R109 · One passphrase for devices, sync and backups
 

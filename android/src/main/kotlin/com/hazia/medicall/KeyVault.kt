@@ -3,6 +3,7 @@ package com.hazia.medicall
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import com.hazia.medicall.data.MedicAllCore
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -12,8 +13,11 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** The database key [KeyVault.databaseKey] returns; [isNew] when it was made just now, so no database made before can open with it. */
+class DatabaseKey(val bytes: ByteArray, val isNew: Boolean)
+
 /**
- * Keeps the database key derived from the passphrase, and the passphrase itself, on this device (SPEC:R10,
+ * Keeps the database key (random, made once: [databaseKey]) and the passphrase on this device (SPEC:R10,
  * SPEC:R109), so the passphrase is entered once per device: sync unlocks the key file with it, and the
  * backups and the repair of SPEC:R23 open with it, without asking again. Each is sealed in its own file
  * with an AES-256-GCM key that lives in the Android key store and never leaves it; the sealed bytes sit
@@ -26,6 +30,14 @@ class KeyVault(
 ) {
 
     fun store(key: ByteArray) = seal(file, key)
+
+    /**
+     * The kept database key, or a new one ([MedicAllCore.newDatabaseKey]) stored at once when none is kept
+     * or the kept one no longer opens (the key store lost its key). A new key cannot open a database made
+     * before it: the caller opens with `setAsideExisting = isNew`.
+     */
+    fun databaseKey(): DatabaseKey =
+        load()?.let { DatabaseKey(it, isNew = false) } ?: DatabaseKey(MedicAllCore.newDatabaseKey().also(::store), isNew = true)
 
     /** The stored key, or null when none is stored or it cannot be opened (the key store lost its key). */
     fun load(): ByteArray? = open(file)

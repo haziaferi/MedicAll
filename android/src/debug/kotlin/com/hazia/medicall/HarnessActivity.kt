@@ -220,8 +220,8 @@ class HarnessActivity : Activity() {
             }
             val vault = KeyVault(this)
             if (typedNow) vault.storePassphrase(phrase)
-            val key = vault.load() ?: MedicAllCore.databaseKey(phrase, device).also(vault::store)
-            val open = openEncryptedDatabase(this, key)
+            val key = vault.databaseKey()
+            val open = openEncryptedDatabase(this, key.bytes, setAsideExisting = key.isNew)
             db?.close()
             db = open.database
             core = runBlocking {
