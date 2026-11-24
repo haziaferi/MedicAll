@@ -339,6 +339,9 @@ class MedicAllCoreTest {
         ).core
         assertEquals(0, said, "not before the first import")
         core.syncNow()
+        assertEquals(0, said, "no own log in the folder yet: still waiting")
+        core.addProfile("Profile R")
+        core.syncNow() // exports the own log, then reads it back
         assertEquals(1, said)
         core.syncNow()
         assertEquals(1, said, "once")

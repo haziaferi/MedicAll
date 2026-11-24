@@ -94,6 +94,8 @@ internal class FolderSync(
         val held = dao.reads().associate { it.path to it.readBytes }
         val present = mutableListOf<String>()
         var report = ImportReport(0, 0)
+        var ownFiles = 0
+        var ownMissed = false
         for (owner in folder.list(FolderLayout.DEVICES)) {
             val dir = FolderLayout.dir(owner)
             val names = folder.list(dir)
@@ -104,8 +106,9 @@ internal class FolderSync(
                 val path = "$dir/$name"
                 val copy = FolderLayout.isConflictCopy(name)
                 val data = FolderLayout.segmentSeq(name) != null || FolderLayout.snapshotSeq(name) != null
+                if (owner == device && data) ownFiles++
                 if (copy || (data && shared)) {
-                    val merged = merge(completeLines(folder.read(path) ?: continue, 0), path = null, from = 0)
+                    val merged = merge(completeLines(folder.read(path) ?: run { if (owner == device) ownMissed = true; null } ?: continue, 0), path = null, from = 0)
                     report += merged
                     // A copy holding a line set aside (too far ahead, or under a key not held yet) is
                     // kept, and read whole again next time, until that line applies.
@@ -115,7 +118,7 @@ internal class FolderSync(
                     val from = held[path] ?: 0
                     // Unchanged since the last read: a peer's snapshot is read once, not on every import.
                     if (folder.size(path) == from) continue
-                    val bytes = folder.read(path) ?: continue
+                    val bytes = folder.read(path) ?: run { if (owner == device) ownMissed = true; null } ?: continue
                     // Shorter than what was read: rewritten under us (a torn SAF write); read it again.
                     val start = if (bytes.size < from) 0 else from.toInt()
                     report += merge(completeLines(bytes, start), path, start)
@@ -123,9 +126,14 @@ internal class FolderSync(
             }
         }
         dao.keepReads(present)
-        readOwn = false
+        // The own log counts as read back only when some of it was there and every file of it opened: an empty or
+        // partial listing (not arrived yet, a storage hiccup) keeps the device reading it, and compaction waiting.
+        if (ownFiles > 0 && !ownMissed) readOwn = false
         return report
     }
+
+    /** True while a database made anew has not yet read its own log back ([recovered]); compaction waits meanwhile. */
+    val readingOwnLog: Boolean get() = readOwn
 
     private suspend fun forgetReadsIfTablesChanged() {
         val names = tables.keys.sorted().joinToString(",")

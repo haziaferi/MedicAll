@@ -164,8 +164,10 @@ class MedicAllCore private constructor(
         blobSync.exchange()
         sync.export()
         val imported = sync.import()
-        ownLogPending?.invoke()
-        ownLogPending = null
+        if (!sync.readingOwnLog) {
+            ownLogPending?.invoke()
+            ownLogPending = null
+        }
         purgeExpired()
         blobSync.exchange()
         return SyncReport(imported, unlockAgain)
