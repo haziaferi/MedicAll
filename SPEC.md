@@ -20,7 +20,7 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 | D-R08 | Languages | 2. Platform and repository |
 | D-R09 | Test devices | 2. Platform and repository |
 | D-R10 | Encryption at rest | 3. Privacy and security |
-| D-R109 | One passphrase for devices, sync and backups | 3. Privacy and security |
+| D-R109 | One passphrase per sync folder | 3. Privacy and security |
 | D-R11 | App lock | 3. Privacy and security |
 | D-R12 | Network use | 3. Privacy and security |
 | D-R13 | Lock-screen privacy of notifications | 3. Privacy and security |
@@ -300,7 +300,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R10 · Encryption at rest
 
-**Rule:** The database and every attachment are encrypted on the device. The passphrase is entered once per device and then kept in the platform's key store.
+**Rule:** The database and every attachment are encrypted on the device. Each sync folder's passphrase (R109) is entered once per device and then kept in the platform's key store.
 
 **Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The database key is 32 random bytes made once per device and kept only in the key store, never derived from the passphrase, so a passphrase change (R109) leaves the database as it is; if the key store loses it, the old database is set aside, kept, and an empty one is filled again from the sync folder and the backups (owner, 2026-11-24, review finding M1). A device keeps one database per sync folder it joins (R110), each with its own random key. The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
 
@@ -308,7 +308,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Since:** 2026-11-24 · owner · agreed rewording
 
-### D-R109 · One passphrase for devices, sync and backups
+### D-R109 · One passphrase per sync folder
 
 **Rule:** One passphrase per sync folder (R110), chosen by the person, protects that folder's logs and backups on every device that joins it; each database has its own key (R10). The passphrase is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
 
@@ -402,7 +402,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Why:** A household sharing one folder would send every adult's records to every phone; a carer and the person both getting the same alarm would double every dose reminder.
 
-**Evidence:** Each joined folder has its own database on the device, with its own key (R10), so no record of one folder is written to another. The switches stay on the device and are never synced or backed up; the device that created a profile is synced with it, so its default comes back after a rebuild, while a switch set by hand returns to its default (owner, 2026-11-24, several folders per device).
+**Evidence:** Each joined folder has its own database on the device, with its own key (R10), so no record of one folder is written to another. The switches stay on the device and are never synced or backed up; the device that created a profile is synced with it, so its default comes back after a rebuild, while a switch set by hand returns to its default. A profile whose creator is unknown (written before the origin was recorded) has reminders off on every device until switched on, so no reminder is doubled (owner, 2026-11-24, several folders per device).
 
 **Acceptance:** A profile synced to a second device fires no reminder there until its switch is turned on; a device that joins only folder B holds no record of folder A.
 
@@ -1582,7 +1582,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R08 · Languages: With the phone set to Italian once Italian ships, every string is Italian; with it set to English, no Italian bureaucracy label appears.
 - R09 · Test devices: Each phase's walk record names all three phones.
 - R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
-- R109 · One passphrase for devices, sync and backups: A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
+- R109 · One passphrase per sync folder: A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 - R11 · App lock: With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 - R12 · Network use: The only network call site in the code is the medicine-list download, and it sends no profile data.
 - R13 · Lock-screen privacy of notifications: On a locked phone, each notification of R73 shows no medicine, analyte, test or condition name.

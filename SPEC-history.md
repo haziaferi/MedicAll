@@ -143,3 +143,6 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-24 · R14 · changed · switchable modules: medicines, daily log and trackers, results, calendar · owner
 - 2026-11-24 · R11 · changed · PIN, timeout, wrong-try waits, forgotten PIN and fingerprint values (provisional) · owner
 - 2026-11-24 · R100 · changed · phase 2 built as 2a (logic) and 2b (screens after R93) · owner
+- 2026-11-24 · R10 · changed · each sync folder's passphrase is entered once per device · owner
+- 2026-11-24 · R109 · renamed · "One passphrase for devices, sync and backups" → "One passphrase per sync folder" · owner
+- 2026-11-24 · R110 · changed · evidence: a profile of unknown origin has reminders off everywhere · owner
