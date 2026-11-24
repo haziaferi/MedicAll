@@ -130,6 +130,7 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 |---|---|
 | Profile | One person, or later one pet, whose records MedicAll keeps. Every record belongs to exactly one profile. |
 | Carer | A person who manages several profiles on their own device. |
+| Sync folder | A folder Syncthing keeps in step between devices; it holds the records of a chosen group of profiles, sealed with its own passphrase. |
 | Medicine | An active ingredient at a strength and form, as the person takes it, independent of the box it comes in. |
 | Product | One pack of a medicine as sold: brand, manufacturer and pack size, identified by its AIC code. |
 | AIC | The 9-digit Italian marketing authorisation code that identifies one pack. |
@@ -301,7 +302,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Rule:** The database and every attachment are encrypted on the device. The passphrase is entered once per device and then kept in the platform's key store.
 
-**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The database key is 32 random bytes made once per device and kept only in the key store, never derived from the passphrase, so a passphrase change (R109) leaves the database as it is; if the key store loses it, the old database is set aside, kept, and an empty one is filled again from the sync folder and the backups (owner, 2026-11-24, review finding M1). The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
+**Evidence:** On Android the database is SQLCipher under Room for Multiplatform (owner, 2026-11-22). The database key is 32 random bytes made once per device and kept only in the key store, never derived from the passphrase, so a passphrase change (R109) leaves the database as it is; if the key store loses it, the old database is set aside, kept, and an empty one is filled again from the sync folder and the backups (owner, 2026-11-24, review finding M1). A device keeps one database per sync folder it joins (R110), each with its own random key. The Windows database's encryption is decided when the Windows phase starts; until then the desktop target runs tests only, on databases in memory.
 
 **Acceptance:** The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
 
@@ -309,7 +310,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R109 · One passphrase for devices, sync and backups
 
-**Rule:** One passphrase, chosen by the person, protects the sync logs and the backups of every device that syncs; each device's database has its own key (R10). The passphrase is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
+**Rule:** One passphrase per sync folder (R110), chosen by the person, protects that folder's logs and backups on every device that joins it; each database has its own key (R10). The passphrase is meant to stay the same, kept like a recovery code, and entered once per device and when a backup is opened by hand. The person can change it; each other device then asks for the new one once, and MedicAll writes a fresh automatic and weekly backup under the new passphrase straight away, saying once that older backups still open with the old one.
 
 **Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time; a stable passphrase keeps every backup usable for repair (R23), and day-to-day access is the app lock's job (R11).
 
@@ -327,11 +328,23 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Why:** The passphrase protects the data and rarely changes (R109); the PIN is the everyday gate, so it can be short and changed freely.
 
+**Values:**
+
+| Setting | Value |
+|---|---|
+| PIN | 4 to 6 digits |
+| Lock after time in the background | 0, 1, 5 or 15 minutes; 1 by default |
+| Wrong PINs | 5 free tries, then a 30-second wait that doubles with each further wrong try, at most 1 hour |
+| Forgotten PIN | removed by typing the passphrase of a sync folder the device joins |
+| Fingerprint | optional, through the system's strong biometric prompt |
+
+**Evidence:** The lock's state lives in a device file sealed by the key store, never in a sync folder or a backup, so a key store that loses its key turns the lock off together with everything else on the device; whoever rebuilds it needs the passphrase anyway. Not checked: provisional values; the owner has not confirmed the timeout or the wait times.
+
 **Acceptance:** With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 
 **Not:** A PIN that encrypts the data: a 4–6 digit secret would be weak against someone who copies the sync folder or a backup.
 
-**Since:** 2026-11-23 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R12 · Network use
 
@@ -359,7 +372,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R14 · Profiles
 
-**Rule:** MedicAll holds any number of profiles. A profile has a name, a birth date and the modules switched on for it. Each adult manages their own profile on their own phone; a carer may hold several.
+**Rule:** MedicAll holds any number of profiles, each with a name, a birth date and the modules switched on for it. Each adult manages their own profile on their own phone; a carer may hold several. Attachments and the emergency card are always on, and the period module joins the switchable modules when it is built (R87).
 
 **Values:**
 
@@ -370,19 +383,30 @@ People who live with several conditions keep medicines, appointments, lab report
 | kind | yes | person; pet is in the data model and not offered in version 1 |
 | modules | yes | each module is on or off per profile |
 
+| Switchable module | Holds |
+|---|---|
+| Medicines | medicines, doses and reminders |
+| Daily log and trackers | day notes, tags and trackers |
+| Results | lab results, the lab readers and blood pressure |
+| Calendar | appointments and their notifications |
+
+**Evidence:** Not checked: provisional, every module is on for a new profile until the owner says otherwise.
+
 **Acceptance:** Two profiles on one device keep separate records, and switching a module off for one leaves the other unchanged.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R110 · Profiles per device and where reminders fire
 
-**Rule:** Each sync folder holds a chosen group of profiles, so one adult's records reach another adult's phone only if both join the same folder. Each device has a "profiles on this device" setting, and per profile a "reminders on this device" switch, on only on the device where the profile was created.
+**Rule:** A device joins one or more sync folders. Each holds a chosen group of profiles and a profile lives in exactly one, so one adult's records reach another adult's phone only if both join the same folder. Each device has a "profiles on this device" setting, made of the folders it joins and, per profile, a "shown" switch, on by default; and per profile a "reminders on this device" switch, on by default only on the device that created the profile.
 
 **Why:** A household sharing one folder would send every adult's records to every phone; a carer and the person both getting the same alarm would double every dose reminder.
 
-**Acceptance:** A profile synced to a second device fires no reminder there until its switch is turned on.
+**Evidence:** Each joined folder has its own database on the device, with its own key (R10), so no record of one folder is written to another. The switches stay on the device and are never synced or backed up; the device that created a profile is synced with it, so its default comes back after a rebuild, while a switch set by hand returns to its default (owner, 2026-11-24, several folders per device).
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Acceptance:** A profile synced to a second device fires no reminder there until its switch is turned on; a device that joins only folder B holds no record of folder A.
+
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R15 · Record identity
 
@@ -464,7 +488,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R22 · Backups
 
-**Rule:** MedicAll writes an automatic backup and a weekly dated one to a folder the person chooses. Each backup is a 7-Zip archive with AES-256 and encrypted file names, and opens without MedicAll.
+**Rule:** For each sync folder (R110), MedicAll writes an automatic backup and a weekly dated one to a backup folder the person chooses for it. Each backup is a 7-Zip archive with AES-256 and encrypted file names, and opens without MedicAll.
 
 **Values:**
 
@@ -478,7 +502,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Not:** An encrypted ZIP: ZIP shows the file names inside without the password.
 
-**Since:** 2026-11-23 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R112 · 7-Zip writer
 
@@ -1541,9 +1565,11 @@ People who live with several conditions keep medicines, appointments, lab report
 | 9 | Today screen | device walk |
 | Later | patterns, monthly review and experiments; episodes; bundles with glucose; the period module; Windows; the watch | each its own gate, set before it starts |
 
+**Evidence:** Phase 2 is built in two steps: 2a, the logic driven from the debug harness, then 2b, the screens once the visual identity is recorded (R93); its gate is checked after 2b (owner, 2026-11-24).
+
 **Acceptance:** none: the order and gates are checked as each phase closes.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ## Acceptance list
 
@@ -1561,7 +1587,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R12 · Network use: The only network call site in the code is the medicine-list download, and it sends no profile data.
 - R13 · Lock-screen privacy of notifications: On a locked phone, each notification of R73 shows no medicine, analyte, test or condition name.
 - R14 · Profiles: Two profiles on one device keep separate records, and switching a module off for one leaves the other unchanged.
-- R110 · Profiles per device and where reminders fire: A profile synced to a second device fires no reminder there until its switch is turned on.
+- R110 · Profiles per device and where reminders fire: A profile synced to a second device fires no reminder there until its switch is turned on; a device that joins only folder B holds no record of folder A.
 - R15 · Record identity: A record created on two devices offline keeps two distinct ids, and a record whose profile does not exist cannot be written.
 - R16 · Sync through Syncthing: Two devices editing the same record offline converge on the later edit after a sync, whatever order the logs are read in.
 - R17 · History keeps its labels: After a tracker is renamed, entries made before the rename still show the old label in history and export.
