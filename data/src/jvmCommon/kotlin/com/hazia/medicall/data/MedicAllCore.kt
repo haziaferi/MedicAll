@@ -136,11 +136,14 @@ class MedicAllCore private constructor(
         return id
     }
 
-    /** Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Its details group keeps the kind. */
+    /**
+     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Only the field
+     * changes: the kind is the one the row holds inside the write's transaction, so a peer's change of kind that an
+     * import brings in meanwhile is kept.
+     */
     suspend fun setBirthDate(id: String, birthDate: String?) {
         checkBirthDate(birthDate)
-        val kind = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }.kind
-        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate, "kind" to kind) }
+        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate) }
     }
 
     /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
@@ -185,11 +188,8 @@ class MedicAllCore private constructor(
     /** Renames profile [id]: its name group only, so a change of kind elsewhere survives the merge (SPEC:R16). */
     suspend fun rename(id: String, name: String) = writes.edit(PROFILE, id, NAME) { mapOf("name" to name) }
 
-    /** Sets profile [id]'s kind: its details group, apart from the name, keeping the birth date it has. */
-    suspend fun changeKind(id: String, kind: String) {
-        val birthDate = profiles.profiles(listOf(id)).singleOrNull()?.birthDate
-        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate, "kind" to kind) }
-    }
+    /** Sets profile [id]'s kind: its details group, apart from the name; the birth date is the one the row holds inside the write. */
+    suspend fun changeKind(id: String, kind: String) = writes.edit(PROFILE, id, DETAILS) { mapOf("kind" to kind) }
 
     /** Every profile, the bin's included, by name then id. */
     suspend fun profiles(): List<ProfileInfo> =

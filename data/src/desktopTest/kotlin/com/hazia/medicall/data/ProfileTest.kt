@@ -43,12 +43,34 @@ class ProfileTest {
     private val wall = today.atTime(12, 0).toInstant(ZoneOffset.UTC).toEpochMilli()
     private val syncRoot by lazy { tmp.newFolder("sync").toPath() }
 
-    private fun device(name: String): MedicAllCore {
+    private fun device(name: String, zone: ZoneOffset = ZoneOffset.UTC): MedicAllCore {
         val dir = tmp.newFolder(name)
         val db = openMedicAllDatabase(File(dir, "medicall.db")).database.also { opened += it }
         return assertIs<Opened.Ready>(runBlocking {
-            MedicAllCore.open(db, DirectorySyncFolder(syncRoot), name, passphrase, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), { wall }, ZoneOffset.UTC)
+            MedicAllCore.open(db, DirectorySyncFolder(syncRoot), name, passphrase, DirectoryBlobStore(dir.toPath().resolve("blobs")), File(dir, "work"), { wall }, zone)
         }).core
+    }
+
+    @Test
+    fun todayIsTheCoresOwnTimeZone_SPEC_R14() = runBlocking {
+        // At 12:00 UTC it is already the next day at UTC+14: that day is a birth date there, not in UTC.
+        val east = device("dev-east", ZoneOffset.ofHours(14))
+        assertEquals(today.plusDays(1).toString(), east.profile(east.addProfile("Profile A", birthDate = today.plusDays(1).toString())).birthDate)
+        val utc = device("dev-utc")
+        assertFailsWith<IllegalArgumentException> { utc.addProfile("Profile B", birthDate = today.plusDays(1).toString()) }
+        Unit
+    }
+
+    @Test
+    fun aBirthDateAndAKindChangedApartBothHold_SPEC_R14() = runBlocking {
+        val a = device("dev-a")
+        val id = a.addProfile("Profile A")
+        a.changeKind(id, MedicAllCore.PET)
+        a.setBirthDate(id, "1990-01-01")
+        a.changeKind(id, MedicAllCore.PERSON)
+        val p = a.profile(id)
+        assertEquals("1990-01-01", p.birthDate)
+        assertEquals(MedicAllCore.PERSON, p.kind)
     }
 
     private suspend fun MedicAllCore.profile(id: String) = profiles().single { it.id == id }
