@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import com.hazia.medicall.data.MedicAllCore
+import com.hazia.medicall.data.device.SealedFile
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -98,13 +99,48 @@ class KeyVault internal constructor(
         }
     }
 
+    /**
+     * [target] as a [SealedFile] sealed by this vault's key-store key: read gives null when it is missing or the key
+     * store lost its key (the device then starts as on a first run), and throws on an error of the moment.
+     */
+    internal fun sealedFile(target: File): SealedFile = object : SealedFile {
+        override fun read(): ByteArray? = when (val s = open(target)) {
+            is Sealed.Opened -> s.bytes
+            Sealed.Missing -> null
+            // Kept aside, never overwritten: a key store that answers again later may still open it.
+            Sealed.Lost -> null.also { setAside() }
+        }
+
+        override fun write(bytes: ByteArray) = seal(target, bytes)
+
+        override fun setAside() {
+            if (target.exists()) check(target.renameTo(File(target.path + LOST_SUFFIX + System.currentTimeMillis()))) { "could not set aside ${target.name}" }
+        }
+    }
+
+    /** Forgets the kept passphrase, as when the device leaves the folder; the database key stays beside its set-aside database. */
+    fun forgetPassphrase() {
+        passphraseFile.delete()
+    }
+
+    /**
+     * Writes [plain] sealed to [target] in one step: to a temporary file of its own, flushed to the disk, then renamed
+     * over [target], so neither a power cut nor a second writer leaves a short or mixed file.
+     */
     private fun seal(target: File, plain: ByteArray) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, wrappingKeyNow() ?: newWrappingKey())
         val sealed = cipher.iv + cipher.doFinal(plain)
-        val temp = File(target.path + ".tmp")
-        temp.writeBytes(sealed)
-        check(temp.renameTo(target) || (target.delete() && temp.renameTo(target))) { "could not store ${target.name}" }
+        val temp = File(target.path + ".tmp-" + java.util.UUID.randomUUID())
+        try {
+            java.io.FileOutputStream(temp).use { out ->
+                out.write(sealed)
+                out.fd.sync()
+            }
+            check(temp.renameTo(target) || (target.delete() && temp.renameTo(target))) { "could not store ${target.name}" }
+        } finally {
+            temp.delete()
+        }
     }
 
     /**
@@ -152,6 +188,23 @@ class KeyVault internal constructor(
 
         /** Beside a sealed key file the key store can no longer open; it is kept, never deleted. */
         const val LOST_SUFFIX = ".unopenable-"
+
+        /** The device's own settings: the folders it joins and its app lock (SPEC:R110, SPEC:R11). */
+        const val DEVICE_FILE_NAME = "device-settings.sealed"
+
+        /**
+         * The vault of joined folder [folderId] (SPEC:R110): its own database key and passphrase files, sealed with the
+         * one key-store key. A device that joins two folders keeps two database keys and two passphrases (SPEC:R109).
+         */
+        fun forFolder(context: Context, folderId: String): KeyVault {
+            require(folderId.isNotEmpty() && folderId.all { it.isLetterOrDigit() || it == '-' }) { "not a folder id: $folderId" }
+            val dir = context.applicationContext.filesDir
+            return KeyVault(context, File(dir, "database-key-v2-$folderId.sealed"), File(dir, "passphrase-$folderId.sealed"))
+        }
+
+        /** The device's settings file ([DEVICE_FILE_NAME]), sealed by the key store, never synced or backed up. */
+        fun deviceFile(context: Context): SealedFile =
+            KeyVault(context).sealedFile(File(context.applicationContext.filesDir, DEVICE_FILE_NAME))
 
         /** The key store's key, or null when it has none; throws when the key store cannot be read. */
         private fun existingKey(): SecretKey? =

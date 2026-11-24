@@ -1,0 +1,228 @@
+package com.hazia.medicall.core.lock
+
+import com.hazia.medicall.core.crypto.pbkdf2Sha256
+import com.hazia.medicall.core.crypto.secureRandomBytes
+import kotlin.concurrent.Volatile
+import kotlin.jvm.Synchronized
+
+/** What a PIN attempt gave. */
+sealed interface Verdict {
+    data object Ok : Verdict
+
+    /** A wrong PIN; [triesLeft] more before a wait starts. */
+    data class Wrong(val triesLeft: Int) : Verdict
+
+    /** Too many wrong PINs: nothing is checked for [millis] more. */
+    data class Wait(val millis: Long) : Verdict
+}
+
+/**
+ * The optional app lock of SPEC:R11: a PIN of 4 to 6 digits, with an optional fingerprint, closing after
+ * [LockState.timeoutMinutes] in the background. It guards the screens only and encrypts nothing.
+ *
+ * Times are read from [elapsedMillis], a clock that only moves forward while the device runs (Android's
+ * `SystemClock.elapsedRealtime`), so changing the wall clock neither ends nor stretches a wait. After a
+ * reboot that clock starts again below the last wrong try: the wait then starts again in full, never ends early.
+ * Every change of state goes to [save] at once, so a wait survives the app being killed. Tries (PIN or
+ * passphrase) run one at a time, so two at once cannot both pass the wait check or lose a count; their slow part
+ * (the PIN hash, a folder's key file) runs outside the lock's own monitor, so [onBackground] and [onForeground]
+ * never wait behind it. A check that throws counts as a wrong try.
+ */
+class AppLock(
+    state: LockState,
+    private val elapsedMillis: () -> Long,
+    private val save: (LockState) -> Unit,
+) {
+    private var state = state
+
+    val isOn: Boolean get() = state.pinHash != null
+
+    /** True while the screens must ask for the PIN; a lock that is on starts locked. Read from any thread. */
+    @Volatile
+    var isLocked: Boolean = isOn
+        private set
+
+    private var backgroundAt: Long? = null
+
+    /** Lets one try run at a time, on its own monitor, apart from this lock's. */
+    private val tries = OneAtATime()
+
+    /** Turns the lock on with [pin]; refused while a PIN is set (use [changePin]). The caller clears [pin]. */
+    fun setPin(pin: CharArray) {
+        check(!isOn) { "a PIN is already set: change it instead" }
+        val fresh = newPin(pin)
+        applyPin(fresh, onlyWhenOff = true)
+    }
+
+    /** Replaces the PIN when [old] is right; a wrong [old] counts as a wrong try. */
+    fun changePin(old: CharArray, new: CharArray): Verdict {
+        val fresh = newPin(new)
+        return attempt(pinMatches(old)) { applyPin(fresh, onlyWhenOff = false) }
+    }
+
+    /** Turns the lock off when [pin] is right, keeping the timeout chosen. */
+    fun turnOff(pin: CharArray): Verdict = attempt(pinMatches(pin)) { removeForgottenPin() }
+
+    /** Opens the lock with [pin]. */
+    fun unlock(pin: CharArray): Verdict {
+        if (!isOn) return Verdict.Ok
+        return attempt(pinMatches(pin)) { isLocked = false }
+    }
+
+    /** The system's strong biometric prompt succeeded; refused unless the lock and its fingerprint are on. */
+    @Synchronized fun unlockedByFingerprint() {
+        check(isOn && state.fingerprint) { "the fingerprint is not on" }
+        update(state.copy(wrongTries = 0, lastWrongAtElapsed = null))
+        isLocked = false
+    }
+
+    /**
+     * Removes the PIN with no check: the caller has just verified the passphrase of a joined sync folder
+     * (SPEC:R11, a forgotten PIN). The timeout chosen is kept.
+     */
+    @Synchronized internal fun removeForgottenPin() {
+        update(LockState.OFF.copy(timeoutMinutes = state.timeoutMinutes))
+        isLocked = false
+    }
+
+    @Synchronized fun onBackground() {
+        backgroundAt = elapsedMillis()
+    }
+
+    /** Locks when the app was in the background for the timeout or longer (any time at all for a timeout of 0). */
+    @Synchronized fun onForeground() {
+        val since = backgroundAt ?: return
+        backgroundAt = null
+        val now = elapsedMillis()
+        if (isOn && (now < since || now - since >= state.timeoutMinutes * MINUTE)) isLocked = true
+    }
+
+    /** One of [TIMEOUTS], in minutes. */
+    @Synchronized fun setTimeout(minutes: Int) {
+        require(minutes in TIMEOUTS) { "the timeout is one of $TIMEOUTS minutes" }
+        update(state.copy(timeoutMinutes = minutes))
+    }
+
+    @Synchronized fun setFingerprint(on: Boolean) {
+        check(!on || isOn) { "set a PIN before the fingerprint" }
+        update(state.copy(fingerprint = on))
+    }
+
+    /**
+     * A forgotten PIN (SPEC:R11): [passphraseOpens] says whether the passphrase typed opens a joined sync folder.
+     * It is asked only outside a wait, and a wrong passphrase counts as a wrong PIN, so neither route can be tried
+     * faster than the other. When it opens, the PIN is removed as by [removeForgottenPin].
+     */
+    fun removeForgottenPinIf(passphraseOpens: () -> Boolean): Verdict =
+        attempt({ passphraseOpens() }) { removeForgottenPin() }
+
+    /** Whether [pin] hashes to the PIN of [seen]. */
+    private fun pinMatches(pin: CharArray): (LockState) -> Boolean =
+        { seen -> hash(pin, seen.salt!!.hexBytes()).constantTimeEquals(seen.pinHash!!.hexBytes()) }
+
+    /**
+     * One try: nothing is checked during a wait; [right] runs outside this lock's monitor; a right one runs
+     * [onRight] under it, a wrong or throwing one is counted.
+     */
+    private fun attempt(right: (LockState) -> Boolean, onRight: () -> Unit): Verdict = tries.one {
+        val seen = begin()
+        if (seen is Verdict) return@one seen
+        val ok = try {
+            right(seen as LockState)
+        } catch (e: Throwable) {
+            finish(false, onRight)
+            throw e
+        }
+        finish(ok, onRight)
+    }
+
+    /** The wait still running, or the state to check a try against. */
+    @Synchronized private fun begin(): Any {
+        check(isOn) { "no PIN is set" }
+        val left = remainingWait()
+        return if (left > 0) Verdict.Wait(left) else state
+    }
+
+    @Synchronized private fun finish(ok: Boolean, onRight: () -> Unit): Verdict {
+        if (ok) {
+            update(state.copy(wrongTries = 0, lastWrongAtElapsed = null))
+            onRight()
+            return Verdict.Ok
+        }
+        val tries = state.wrongTries + 1
+        update(state.copy(wrongTries = tries, lastWrongAtElapsed = elapsedMillis()))
+        return if (tries <= FREE_TRIES) Verdict.Wrong(FREE_TRIES - tries) else Verdict.Wait(waitAfter(tries))
+    }
+
+    /** A new PIN's hash and salt, made outside the monitor. */
+    private class FreshPin(val hash: String, val salt: String)
+
+    private fun newPin(pin: CharArray): FreshPin {
+        checkDigits(pin)
+        val salt = secureRandomBytes(16)
+        return FreshPin(hash(pin, salt).hex(), salt.hex())
+    }
+
+    @Synchronized private fun applyPin(fresh: FreshPin, onlyWhenOff: Boolean) {
+        if (onlyWhenOff) check(!isOn) { "a PIN is already set: change it instead" }
+        update(state.copy(pinHash = fresh.hash, salt = fresh.salt, wrongTries = 0, lastWrongAtElapsed = null))
+        if (onlyWhenOff) isLocked = false
+    }
+
+    /** Milliseconds left of the wait the wrong tries so far impose; a clock now below the last wrong try (a reboot) starts it again. */
+    private fun remainingWait(): Long {
+        val last = state.lastWrongAtElapsed ?: return 0
+        if (state.wrongTries < FREE_TRIES) return 0
+        val now = elapsedMillis()
+        if (now < last) {
+            update(state.copy(lastWrongAtElapsed = now))
+            return waitAfter(state.wrongTries)
+        }
+        return (last + waitAfter(state.wrongTries) - now).coerceAtLeast(0)
+    }
+
+    private fun update(new: LockState) {
+        state = new
+        save(new)
+    }
+
+    companion object {
+        val PIN_DIGITS = 4..6
+        val TIMEOUTS = listOf(0, 1, 5, 15)
+        const val DEFAULT_TIMEOUT = 1
+        const val FREE_TRIES = 5
+        const val FIRST_WAIT = 30_000L
+        const val MAX_WAIT = 3_600_000L
+        private const val MINUTE = 60_000L
+        private const val ITERATIONS = 100_000
+
+        /** The wait after the [tries]-th wrong PIN: none before [FREE_TRIES], then [FIRST_WAIT] doubling, at most [MAX_WAIT]. */
+        internal fun waitAfter(tries: Int): Long {
+            if (tries < FREE_TRIES) return 0
+            var wait = FIRST_WAIT
+            repeat(tries - FREE_TRIES) { wait = minOf(wait * 2, MAX_WAIT) }
+            return wait
+        }
+
+        private fun checkDigits(pin: CharArray) =
+            require(pin.size in PIN_DIGITS && pin.all { it in '0'..'9' }) { "a PIN is ${PIN_DIGITS.first} to ${PIN_DIGITS.last} digits" }
+
+        private fun hash(pin: CharArray, salt: ByteArray) = pbkdf2Sha256(pin, salt, ITERATIONS, 32)
+
+        private fun ByteArray.constantTimeEquals(other: ByteArray): Boolean {
+            if (size != other.size) return false
+            var diff = 0
+            for (i in indices) diff = diff or (this[i].toInt() xor other[i].toInt())
+            return diff == 0
+        }
+
+        private fun ByteArray.hex() = joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+        private fun String.hexBytes() = ByteArray(length / 2) { substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+    }
+}
+
+/** Runs one block at a time, on this object's own monitor. */
+private class OneAtATime {
+    @Synchronized fun <T> one(block: () -> T): T = block()
+}
