@@ -40,39 +40,57 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
     companion object {
         val EMPTY = DeviceSettings(emptyList(), LockState.OFF)
 
-        /** [bytes] as [encode] wrote them; anything else is [EMPTY], as on a first run. */
-        fun decode(bytes: ByteArray?): DeviceSettings {
-            if (bytes == null) return EMPTY
-            return try {
-                val o = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
-                require(o.getValue("v").jsonPrimitive.int == 1)
-                val folders = o.getValue("folders").jsonArray.map { e ->
-                    val f = e.jsonObject
-                    fun text(key: String) = f.getValue(key).jsonPrimitive.takeUnless { it is JsonNull }?.content
-                    JoinedFolder(text("id")!!, text("label")!!, text("folder")!!, text("backup"))
-                }
-                DeviceSettings(folders, LockState.decode((o.getValue("lock") as JsonObject).toString().encodeToByteArray()))
+        /**
+         * [bytes] as [encode] wrote them, and whether every part read ([Decoded.whole]). No file is a first run
+         * ([EMPTY]). Otherwise each part reads on its own: a folder entry that does not read is left out and the others
+         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off.
+         */
+        fun decode(bytes: ByteArray?): Decoded {
+            if (bytes == null) return Decoded(EMPTY, whole = true)
+            val o = try {
+                Json.parseToJsonElement(bytes.decodeToString()).jsonObject.also { require(it.getValue("v").jsonPrimitive.int == 1) }
             } catch (_: Exception) {
-                EMPTY
+                return Decoded(DeviceSettings(emptyList(), LockState.UNREADABLE), whole = false)
             }
+            var whole = true
+            val folders = (runCatching { o.getValue("folders").jsonArray }.getOrNull() ?: JsonArray(emptyList()).also { whole = false })
+                .mapNotNull { e ->
+                    runCatching {
+                        val f = e.jsonObject
+                        fun text(key: String) = f.getValue(key).jsonPrimitive.takeUnless { it is JsonNull }?.content
+                        JoinedFolder(text("id")!!, text("label")!!, text("folder")!!, text("backup"))
+                    }.getOrNull().also { if (it == null) whole = false }
+                }
+            val lockBytes = runCatching { (o.getValue("lock") as JsonObject).toString().encodeToByteArray() }.getOrNull()
+            val lock = lockBytes?.let(LockState::decode) ?: LockState.UNREADABLE
+            if (lock == LockState.UNREADABLE) whole = false
+            return Decoded(DeviceSettings(folders, lock), whole)
         }
     }
+
+    /** What [decode] read; [whole] is false when some part did not read, and the file should be kept aside. */
+    data class Decoded(val settings: DeviceSettings, val whole: Boolean)
 }
 
 /**
  * The folders this device joins and its app lock (SPEC:R110, SPEC:R11), kept in [file]. Every change is
- * written at once. No passphrase is kept here: each folder's is in the key store beside its database key.
+ * written at once, one at a time. No passphrase is kept here: each folder's is in the key store beside its
+ * database key. A file that opens but does not read whole is set aside before anything is written over it, so
+ * what it held is kept for repair; what did read is used meanwhile.
  */
 class FolderRegistry(private val file: SealedFile) {
-    private var settings = DeviceSettings.decode(file.read())
+    private var settings = DeviceSettings.decode(file.read()).let { d ->
+        if (!d.whole) file.setAside()
+        d.settings
+    }
 
-    fun folders(): List<JoinedFolder> = settings.folders
+    @Synchronized fun folders(): List<JoinedFolder> = settings.folders
 
     /**
      * Joins a new folder at [folderUri], under [id] (a new one by default); a folder already joined throws an
      * [IllegalStateException].
      */
-    fun add(label: String, folderUri: String, id: String = Ids.new()): JoinedFolder {
+    @Synchronized fun add(label: String, folderUri: String, id: String = Ids.new()): JoinedFolder {
         checkNew(folderUri)
         require(settings.folders.none { it.id == id }) { "folder id $id is taken" }
         val folder = JoinedFolder(id, label, folderUri, backupUri = null)
@@ -81,21 +99,21 @@ class FolderRegistry(private val file: SealedFile) {
     }
 
     /** Throws an [IllegalStateException] when [folderUri] is already joined. */
-    fun checkNew(folderUri: String) = check(settings.folders.none { it.folderUri == folderUri }) { "this folder is already joined" }
+    @Synchronized fun checkNew(folderUri: String) = check(settings.folders.none { it.folderUri == folderUri }) { "this folder is already joined" }
 
-    fun rename(id: String, label: String) = change(id) { it.copy(label = label) }
+    @Synchronized fun rename(id: String, label: String) = change(id) { it.copy(label = label) }
 
-    fun setBackup(id: String, backupUri: String?) = change(id) { it.copy(backupUri = backupUri) }
+    @Synchronized fun setBackup(id: String, backupUri: String?) = change(id) { it.copy(backupUri = backupUri) }
 
     /** Forgets folder [id]; its database is set aside by the caller, never deleted. */
-    fun remove(id: String) {
+    @Synchronized fun remove(id: String) {
         require(settings.folders.any { it.id == id }) { "no joined folder $id" }
         save(settings.copy(folders = settings.folders.filter { it.id != id }))
     }
 
-    fun lock(): LockState = settings.lock
+    @Synchronized fun lock(): LockState = settings.lock
 
-    fun saveLock(state: LockState) = save(settings.copy(lock = state))
+    @Synchronized fun saveLock(state: LockState) = save(settings.copy(lock = state))
 
     private fun change(id: String, block: (JoinedFolder) -> JoinedFolder) {
         require(settings.folders.any { it.id == id }) { "no joined folder $id" }

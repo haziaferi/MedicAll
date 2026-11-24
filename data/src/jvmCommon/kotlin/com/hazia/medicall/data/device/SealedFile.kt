@@ -10,4 +10,7 @@ interface SealedFile {
 
     /** Replaces the whole file in one step, sealed. */
     fun write(bytes: ByteArray)
+
+    /** Moves the file out of the way, kept and never deleted, so the next [write] does not overwrite what it held. */
+    fun setAside()
 }

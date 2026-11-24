@@ -2,6 +2,7 @@ package com.hazia.medicall.core.lock
 
 import com.hazia.medicall.core.crypto.pbkdf2Sha256
 import com.hazia.medicall.core.crypto.secureRandomBytes
+import kotlin.jvm.Synchronized
 
 /** What a PIN attempt gave. */
 sealed interface Verdict {
@@ -21,7 +22,8 @@ sealed interface Verdict {
  * Times are read from [elapsedMillis], a clock that only moves forward while the device runs (Android's
  * `SystemClock.elapsedRealtime`), so changing the wall clock neither ends nor stretches a wait. After a
  * reboot that clock starts again below the last wrong try: the wait then starts again in full, never ends early.
- * Every change of state goes to [save] at once, so a wait survives the app being killed.
+ * Every change of state goes to [save] at once, so a wait survives the app being killed. Calls are serialised,
+ * so two PIN tries at once cannot both pass the wait check or lose a count.
  */
 class AppLock(
     state: LockState,
@@ -39,29 +41,29 @@ class AppLock(
     private var backgroundAt: Long? = null
 
     /** Turns the lock on with [pin]; refused while a PIN is set (use [changePin]). The caller clears [pin]. */
-    fun setPin(pin: CharArray) {
+    @Synchronized fun setPin(pin: CharArray) {
         check(!isOn) { "a PIN is already set: change it instead" }
         update(withPin(state, pin))
         isLocked = false
     }
 
     /** Replaces the PIN when [old] is right; a wrong [old] counts as a wrong try. */
-    fun changePin(old: CharArray, new: CharArray): Verdict {
+    @Synchronized fun changePin(old: CharArray, new: CharArray): Verdict {
         checkDigits(new)
         return attempt(old).also { if (it == Verdict.Ok) update(withPin(state, new)) }
     }
 
     /** Turns the lock off when [pin] is right, keeping the timeout chosen. */
-    fun turnOff(pin: CharArray): Verdict = attempt(pin).also { if (it == Verdict.Ok) removeForgottenPin() }
+    @Synchronized fun turnOff(pin: CharArray): Verdict = attempt(pin).also { if (it == Verdict.Ok) removeForgottenPin() }
 
     /** Opens the lock with [pin]. */
-    fun unlock(pin: CharArray): Verdict {
+    @Synchronized fun unlock(pin: CharArray): Verdict {
         if (!isOn) return Verdict.Ok
         return attempt(pin).also { if (it == Verdict.Ok) isLocked = false }
     }
 
     /** The system's strong biometric prompt succeeded; refused unless the lock and its fingerprint are on. */
-    fun unlockedByFingerprint() {
+    @Synchronized fun unlockedByFingerprint() {
         check(isOn && state.fingerprint) { "the fingerprint is not on" }
         update(state.copy(wrongTries = 0, lastWrongAtElapsed = null))
         isLocked = false
@@ -71,17 +73,17 @@ class AppLock(
      * Removes the PIN with no check: the caller has just verified the passphrase of a joined sync folder
      * (SPEC:R11, a forgotten PIN). The timeout chosen is kept.
      */
-    fun removeForgottenPin() {
+    @Synchronized internal fun removeForgottenPin() {
         update(LockState.OFF.copy(timeoutMinutes = state.timeoutMinutes))
         isLocked = false
     }
 
-    fun onBackground() {
+    @Synchronized fun onBackground() {
         backgroundAt = elapsedMillis()
     }
 
     /** Locks when the app was in the background for the timeout or longer (any time at all for a timeout of 0). */
-    fun onForeground() {
+    @Synchronized fun onForeground() {
         val since = backgroundAt ?: return
         backgroundAt = null
         val now = elapsedMillis()
@@ -89,12 +91,12 @@ class AppLock(
     }
 
     /** One of [TIMEOUTS], in minutes. */
-    fun setTimeout(minutes: Int) {
+    @Synchronized fun setTimeout(minutes: Int) {
         require(minutes in TIMEOUTS) { "the timeout is one of $TIMEOUTS minutes" }
         update(state.copy(timeoutMinutes = minutes))
     }
 
-    fun setFingerprint(on: Boolean) {
+    @Synchronized fun setFingerprint(on: Boolean) {
         check(!on || isOn) { "set a PIN before the fingerprint" }
         update(state.copy(fingerprint = on))
     }
@@ -104,7 +106,7 @@ class AppLock(
      * It is asked only outside a wait, and a wrong passphrase counts as a wrong PIN, so neither route can be tried
      * faster than the other. When it opens, the PIN is removed as by [removeForgottenPin].
      */
-    fun removeForgottenPinIf(passphraseOpens: () -> Boolean): Verdict =
+    @Synchronized fun removeForgottenPinIf(passphraseOpens: () -> Boolean): Verdict =
         attempt(passphraseOpens).also { if (it == Verdict.Ok) removeForgottenPin() }
 
     /** Checks [pin] against the kept hash, counting a wrong one; nothing is checked during a wait. */

@@ -104,17 +104,43 @@ class KeyVault internal constructor(
      * store lost its key (the device then starts as on a first run), and throws on an error of the moment.
      */
     internal fun sealedFile(target: File): SealedFile = object : SealedFile {
-        override fun read(): ByteArray? = (open(target) as? Sealed.Opened)?.bytes
+        override fun read(): ByteArray? = when (val s = open(target)) {
+            is Sealed.Opened -> s.bytes
+            Sealed.Missing -> null
+            // Kept aside, never overwritten: a key store that answers again later may still open it.
+            Sealed.Lost -> null.also { setAside() }
+        }
+
         override fun write(bytes: ByteArray) = seal(target, bytes)
+
+        override fun setAside() {
+            if (target.exists()) check(target.renameTo(File(target.path + LOST_SUFFIX + System.currentTimeMillis()))) { "could not set aside ${target.name}" }
+        }
     }
 
+    /** Forgets the kept passphrase, as when the device leaves the folder; the database key stays beside its set-aside database. */
+    fun forgetPassphrase() {
+        passphraseFile.delete()
+    }
+
+    /**
+     * Writes [plain] sealed to [target] in one step: to a temporary file of its own, flushed to the disk, then renamed
+     * over [target], so neither a power cut nor a second writer leaves a short or mixed file.
+     */
     private fun seal(target: File, plain: ByteArray) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, wrappingKeyNow() ?: newWrappingKey())
         val sealed = cipher.iv + cipher.doFinal(plain)
-        val temp = File(target.path + ".tmp")
-        temp.writeBytes(sealed)
-        check(temp.renameTo(target) || (target.delete() && temp.renameTo(target))) { "could not store ${target.name}" }
+        val temp = File(target.path + ".tmp-" + java.util.UUID.randomUUID())
+        try {
+            java.io.FileOutputStream(temp).use { out ->
+                out.write(sealed)
+                out.fd.sync()
+            }
+            check(temp.renameTo(target) || (target.delete() && temp.renameTo(target))) { "could not store ${target.name}" }
+        } finally {
+            temp.delete()
+        }
     }
 
     /**

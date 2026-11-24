@@ -40,7 +40,17 @@ data class LockState(
         /** No PIN: the lock is off. */
         val OFF = LockState(null, null, AppLock.DEFAULT_TIMEOUT, fingerprint = false, wrongTries = 0, lastWrongAtElapsed = null)
 
-        /** [bytes] as [encode] wrote them; anything else reads as [OFF]. */
+        /**
+         * A kept state that opened but cannot be read (damaged, or written by a newer version): the lock stays closed,
+         * since it may have been on. Its hash matches no PIN, so only a sync folder's passphrase opens it
+         * ([AppLock.removeForgottenPinIf]). Only a file that is missing, or whose key the key store lost, means [OFF].
+         */
+        val UNREADABLE = LockState("00", "00", AppLock.DEFAULT_TIMEOUT, fingerprint = false, wrongTries = 0, lastWrongAtElapsed = null)
+
+        /**
+         * [bytes] as [encode] wrote them; anything else is [UNREADABLE]. A timeout that is not one of [AppLock.TIMEOUTS]
+         * (the choices changed since it was kept) takes the nearest shorter choice, so the lock never stays open longer.
+         */
         fun decode(bytes: ByteArray): LockState = try {
             val o = Json.parseToJsonElement(bytes.decodeToString()).jsonObject
             require(o.getValue("v").jsonPrimitive.int == 1)
@@ -48,13 +58,15 @@ data class LockState(
             LockState(
                 pinHash = text("pinHash"),
                 salt = text("salt"),
-                timeoutMinutes = o.getValue("timeout").jsonPrimitive.int.also { require(it in AppLock.TIMEOUTS) },
+                timeoutMinutes = nearestShorter(o.getValue("timeout").jsonPrimitive.int),
                 fingerprint = o.getValue("fingerprint").jsonPrimitive.boolean,
                 wrongTries = o.getValue("tries").jsonPrimitive.int.also { require(it >= 0) },
                 lastWrongAtElapsed = o.getValue("lastWrong").jsonPrimitive.longOrNull,
             ).also { require((it.pinHash == null) == (it.salt == null)) }
         } catch (_: Exception) {
-            OFF
+            UNREADABLE
         }
+
+        private fun nearestShorter(minutes: Int): Int = AppLock.TIMEOUTS.lastOrNull { it <= minutes } ?: AppLock.TIMEOUTS.first()
     }
 }

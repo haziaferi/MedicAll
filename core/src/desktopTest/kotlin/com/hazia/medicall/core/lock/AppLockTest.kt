@@ -130,9 +130,30 @@ class AppLockTest {
     }
 
     @Test
-    fun anUnreadableStateIsOff_SPEC_R11() {
-        assertEquals(LockState.OFF, LockState.decode("not a lock".encodeToByteArray()))
-        assertEquals(LockState.OFF, LockState.decode(ByteArray(0)))
+    fun anUnreadableStateKeepsTheLockClosed_SPEC_R11() {
+        for (bytes in listOf("not a lock".encodeToByteArray(), ByteArray(0), """{"v":2}""".encodeToByteArray())) {
+            val state = LockState.decode(bytes)
+            assertEquals(LockState.UNREADABLE, state)
+            val l = lock(state)
+            assertTrue(l.isOn)
+            assertTrue(l.isLocked)
+            assertIs<Verdict.Wrong>(l.unlock(pin))
+            assertTrue(l.isLocked)
+            // Only a folder's passphrase opens it.
+            assertEquals(Verdict.Ok, l.removeForgottenPinIf { true })
+            assertFalse(l.isOn)
+        }
+    }
+
+    @Test
+    fun anUnknownTimeoutSnapsToTheNearestShorter_SPEC_R11() {
+        lock().setPin(pin)
+        fun withTimeout(m: Int) = LockState.decode(saved.encode().decodeToString().replace(""""timeout":1""", """"timeout":$m""").encodeToByteArray())
+        assertEquals(5, withTimeout(7).timeoutMinutes)
+        assertEquals(5, withTimeout(10).timeoutMinutes)
+        assertEquals(15, withTimeout(30).timeoutMinutes)
+        assertEquals(0, withTimeout(-3).timeoutMinutes)
+        assertEquals(saved.pinHash, withTimeout(10).pinHash)
     }
 
     @Test

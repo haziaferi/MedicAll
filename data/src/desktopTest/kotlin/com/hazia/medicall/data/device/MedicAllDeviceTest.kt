@@ -68,13 +68,26 @@ class MedicAllDeviceTest {
             }
         }
 
+        /** Folders whose open throws, as a revoked grant would. */
+        val broken = mutableSetOf<String>()
+
+        /** Databases open now, by folder id: none is left open by an open that was not Ready. */
+        val openNow: Set<String> get() = databases.keys
+
         private suspend fun open(f: JoinedFolder, passphrase: CharArray): Opened {
-            val db = openMedicAllDatabase(File(dir, f.databaseName)).database.also { opened += it; databases[f.id] = it }
+            check(f.label !in broken) { "the grant of ${f.label} was revoked" }
+            // As a shell does: a folder opened again keeps its database open and builds a new core over it.
+            val existing = databases[f.id]
+            val db = existing ?: openMedicAllDatabase(File(dir, f.databaseName)).database.also { opened += it }
             val work = File(dir, f.id)
-            return com.hazia.medicall.data.MedicAllCore.open(
+            val result = com.hazia.medicall.data.MedicAllCore.open(
                 db, DirectorySyncFolder(Paths.get(f.folderUri)), name, passphrase,
                 DirectoryBlobStore(work.toPath().resolve("blobs")), File(work, "work"), System::currentTimeMillis, ZoneOffset.UTC,
             )
+            if (existing == null) {
+                if (result is Opened.Ready) databases[f.id] = db else db.close()
+            }
+            return result
         }
     }
 
@@ -121,6 +134,7 @@ class MedicAllDeviceTest {
         val phone2 = Phone("phone-2")
         val two = phone2.device()
         assertIs<Opened.Refused>(two.join("Folder A", folderA.toString(), passB.toCharArray()))
+        assertTrue(phone2.openNow.isEmpty())
         assertTrue(two.folders().isEmpty())
         assertTrue(FolderRegistry(phone2.settings).folders().isEmpty())
         assertFailsWith<IllegalStateException> { one.join("Folder A again", folderA.toString(), passA.toCharArray()) }
@@ -194,6 +208,25 @@ class MedicAllDeviceTest {
     }
 
     @Test
+    fun aFolderOpensAgainWithThePassphraseOfNow_SPEC_R109() = runBlocking {
+        val one = Phone("phone-1").device()
+        val first = assertIs<Opened.Ready>(one.join("Folder A", folderA.toString(), passA.toCharArray())).core
+        val id = one.folders().single().id
+        val profile = first.addProfile("Profile A")
+
+        // A wrong passphrase leaves the open core as it is.
+        assertIs<Opened.Refused>(one.reopen(id, passB.toCharArray()))
+        assertTrue(one.core(id) === first)
+
+        val second = assertIs<Opened.Ready>(one.reopen(id, passA.toCharArray())).core
+        assertTrue(one.core(id) === second)
+        assertEquals(listOf(profile), second.profiles().map { it.id })
+        assertFailsWith<IllegalStateException> { first.backUp(DirectoryBackupTarget(tmp.newFolder("old").toPath())) }
+        assertFailsWith<IllegalArgumentException> { one.reopen("no-such-folder", passA.toCharArray()) }
+        Unit
+    }
+
+    @Test
     fun everyFolderOpensAgainAfterARestart_SPEC_R110() = runBlocking {
         val phone = Phone("phone-1")
         val one = phone.device()
@@ -202,7 +235,7 @@ class MedicAllDeviceTest {
 
         val again = phone.device()
         val result = again.openAll { f -> (if (f.label == "Folder A") passA else passB).toCharArray() }
-        assertTrue(result.values.all { it is Opened.Ready })
+        assertTrue(result.values.all { it.getOrNull() is Opened.Ready })
         assertEquals(setOf("Profile A", "Profile B"), again.profiles().map { it.second.name }.toSet())
         assertEquals(listOf("Folder A", "Folder B"), again.profiles().map { it.first.label }.sorted())
 
@@ -211,5 +244,21 @@ class MedicAllDeviceTest {
         val some = third.openAll { f -> if (f.label == "Folder B") passB.toCharArray() else null }
         assertEquals(1, some.size)
         assertEquals(listOf("Profile B"), third.profiles().map { it.second.name })
+    }
+
+    @Test
+    fun oneFailingFolderDoesNotStopTheOthers_SPEC_R110() = runBlocking {
+        val phone = Phone("phone-1")
+        val one = phone.device()
+        assertIs<Opened.Ready>(one.join("Folder A", folderA.toString(), passA.toCharArray()))
+        assertIs<Opened.Ready>(one.join("Folder B", folderB.toString(), passB.toCharArray())).core.addProfile("Profile B")
+
+        phone.broken += "Folder A"
+        val again = phone.device()
+        val result = again.openAll { f -> (if (f.label == "Folder A") passA else passB).toCharArray() }
+        val (idA, idB) = again.folders().map { it.id }
+        assertTrue(result.getValue(idA).isFailure)
+        assertIs<Opened.Ready>(result.getValue(idB).getOrThrow())
+        assertEquals(listOf("Profile B"), again.profiles().map { it.second.name })
     }
 }

@@ -8,9 +8,15 @@ import kotlin.test.assertTrue
 
 /** A sealed file held in memory, as the key store's file holds it on Android. */
 internal class MemorySealedFile(var bytes: ByteArray? = null) : SealedFile {
+    /** What [setAside] moved out of the way, oldest first. */
+    val keptAside = mutableListOf<ByteArray>()
     override fun read() = bytes?.copyOf()
     override fun write(bytes: ByteArray) {
         this.bytes = bytes.copyOf()
+    }
+    override fun setAside() {
+        bytes?.let { keptAside += it }
+        bytes = null
     }
 }
 
@@ -62,18 +68,38 @@ class FolderRegistryTest {
 
     @Test
     fun noSettingsMeansFirstRun_SPEC_R11() {
-        for (file in listOf(MemorySealedFile(null), MemorySealedFile("not settings".encodeToByteArray()), MemorySealedFile(ByteArray(0)))) {
+        val registry = FolderRegistry(MemorySealedFile(null))
+        assertTrue(registry.folders().isEmpty())
+        assertEquals(LockState.OFF, registry.lock())
+    }
+
+    @Test
+    fun anUnreadableFileIsKeptAsideAndTheLockStaysClosed_SPEC_R11() {
+        for (raw in listOf("not settings", "", """{"v":2,"folders":[]}""")) {
+            val file = MemorySealedFile(raw.encodeToByteArray())
             val registry = FolderRegistry(file)
             assertTrue(registry.folders().isEmpty())
-            assertEquals(LockState.OFF, registry.lock())
+            assertEquals(LockState.UNREADABLE, registry.lock())
+            registry.add("Folder A", "content://tree/folder-a")
+            assertEquals(listOf(raw), file.keptAside.map { it.decodeToString() })
         }
     }
 
     @Test
-    fun theFileHoldsNoPassphrase_SPEC_R109() {
+    fun aBadFolderEntryKeepsTheOthersAndTheLock_SPEC_R110() {
         val file = MemorySealedFile()
-        FolderRegistry(file).add("Folder A", "content://tree/folder-a")
-        val text = file.bytes!!.decodeToString()
-        assertTrue("passphrase" !in text.lowercase())
+        val registry = FolderRegistry(file)
+        registry.add("Folder A", "content://tree/folder-a")
+        val b = registry.add("Folder B", "content://tree/folder-b")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        val original = file.bytes!!.decodeToString()
+        // Folder A's entry loses its address.
+        file.bytes = original.replace(""""folder":"content://tree/folder-a",""", "").encodeToByteArray()
+
+        val again = FolderRegistry(file)
+        assertEquals(listOf(b), again.folders())
+        assertEquals(lock, again.lock())
+        assertEquals(1, file.keptAside.size)
     }
 }
