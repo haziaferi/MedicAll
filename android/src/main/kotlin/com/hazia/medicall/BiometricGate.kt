@@ -19,8 +19,11 @@ import javax.crypto.SecretKey
  *
  * A pass counts only when the prompt hands back a working key-store cipher: the key needs a strong biometric for
  * every use, so a success callback reached any other way (a hooked or replayed callback) cannot encrypt with it.
- * Adding or removing a fingerprint on the phone invalidates the key; the next try asks for the PIN and makes a
- * new key.
+ *
+ * The key is made only by [enroll], when the person (already past the lock) switches the fingerprint on, so it
+ * holds the fingerprints of that moment. Adding or removing a fingerprint on the phone invalidates it; [ask] then
+ * deletes it and calls `lost`, the lock turns its fingerprint off, and only the PIN opens until the person
+ * switches the fingerprint on again. A missing key is never made by [ask].
  */
 object BiometricGate {
     private const val KEYSTORE = "AndroidKeyStore"
@@ -31,16 +34,36 @@ object BiometricGate {
     fun available(activity: Activity): Boolean =
         activity.getSystemService(BiometricManager::class.java)?.canAuthenticate(BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
 
-    /** Shows the prompt; [passed] runs on the main thread when it succeeds, [notPassed] with the reason otherwise. */
-    fun ask(activity: Activity, title: String, cancel: String, passed: () -> Unit, notPassed: (String) -> Unit) {
-        val cipher = try {
-            cipher()
-        } catch (e: KeyPermanentlyInvalidatedException) {
-            forgetKey()
-            return notPassed("The phone's fingerprints changed: unlock with the PIN.")
-        } catch (e: Exception) {
-            return notPassed("The fingerprint key is not available: ${e.message ?: e}")
+    /** Makes a new fingerprint key, bound to the fingerprints enrolled now, replacing any old one. */
+    fun enroll() {
+        forget()
+        KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
+            init(
+                KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .setUserAuthenticationRequired(true)
+                    .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
+                    .setInvalidatedByBiometricEnrollment(true)
+                    .build(),
+            )
+            generateKey()
         }
+    }
+
+    /** Deletes the fingerprint key, as when the fingerprint is switched off. */
+    fun forget() {
+        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS) }
+    }
+
+    /**
+     * Shows the prompt; [passed] runs on the main thread when it succeeds, [notPassed] with the reason otherwise.
+     * [lost] runs (then [notPassed]) when the key is gone or the phone's fingerprints changed: the fingerprint must
+     * be switched off until it is switched on again past the PIN.
+     */
+    fun ask(activity: Activity, title: String, cancel: String, passed: () -> Unit, notPassed: (String) -> Unit, lost: () -> Unit) {
+        val cipher = cipherForPrompt(notPassed, lost) ?: return
         val prompt = BiometricPrompt.Builder(activity)
             .setTitle(title)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
@@ -58,28 +81,28 @@ object BiometricGate {
             })
     }
 
-    /** A cipher over the fingerprint key, ready for the prompt to unlock. */
-    private fun cipher(): Cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-
-    private fun key(): SecretKey {
-        val store = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        (store.getKey(ALIAS, null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE).run {
-            init(
-                KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                    .setKeySize(256)
-                    .setUserAuthenticationRequired(true)
-                    .setUserAuthenticationParameters(0, KeyProperties.AUTH_BIOMETRIC_STRONG)
-                    .setInvalidatedByBiometricEnrollment(true)
-                    .build(),
-            )
-            generateKey()
+    /** A cipher over the existing key for the prompt to unlock, or null after [notPassed] (and [lost] when the key is gone). */
+    internal fun cipherForPrompt(notPassed: (String) -> Unit, lost: () -> Unit): Cipher? = try {
+        val key = existingKey()
+        if (key == null) {
+            lost()
+            notPassed("The fingerprint is not set up here: unlock with the PIN.")
+            null
+        } else {
+            Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key) }
         }
+    } catch (e: KeyPermanentlyInvalidatedException) {
+        forget()
+        lost()
+        notPassed("The phone's fingerprints changed: unlock with the PIN, then switch the fingerprint on again.")
+        null
+    } catch (e: Exception) {
+        notPassed("The fingerprint key is not available: ${e.message ?: e}")
+        null
     }
 
-    private fun forgetKey() {
-        runCatching { KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS) }
-    }
+    internal fun hasKey(): Boolean = existingKey() != null
+
+    private fun existingKey(): SecretKey? =
+        KeyStore.getInstance(KEYSTORE).apply { load(null) }.getKey(ALIAS, null) as? SecretKey
 }

@@ -61,6 +61,42 @@ class AppLockTest {
     }
 
     @Test
+    fun aClockBelowTheBackgroundMomentLocks_SPEC_R11() {
+        val l = lock()
+        l.setPin(pin)
+        l.onBackground(); now -= 5 * SECOND; l.onForeground() // a reboot: the elapsed clock started again
+        assertTrue(l.isLocked)
+    }
+
+    @Test
+    fun aCheckThatThrowsCountsAsAWrongTry_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        assertFailsWith<IllegalStateException> { l.removeForgottenPinIf { error("the folder cannot be read") } }
+        assertEquals(1, saved.wrongTries)
+        assertEquals(Verdict.Wrong(AppLock.FREE_TRIES - 2), l.unlock(pin("1357")))
+    }
+
+    @Test
+    fun aSlowTryDoesNotHoldUpTheLocksClock_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        val checking = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val tryThread = Thread { l.removeForgottenPinIf { checking.countDown(); release.await(); false } }.apply { start() }
+        assertTrue(checking.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        // The try is mid-check: the app going to the background and back must not wait for it.
+        val clock = Thread { l.onBackground(); l.onForeground() }.apply { start() }
+        clock.join(2_000)
+        val clockWaited = clock.isAlive
+        release.countDown()
+        tryThread.join(5_000)
+        clock.join(5_000)
+        assertFalse(clockWaited)
+        assertEquals(1, saved.wrongTries)
+    }
+
+    @Test
     fun anUnlockedLockWithNoPinNeverCloses_SPEC_R11() {
         val l = lock()
         l.onBackground(); now += 60 * MINUTE; l.onForeground()

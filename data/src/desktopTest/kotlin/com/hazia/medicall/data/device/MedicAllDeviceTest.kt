@@ -14,6 +14,7 @@ import com.hazia.medicall.data.blob.DirectoryBlobStore
 import com.hazia.medicall.data.openMedicAllDatabase
 import com.hazia.medicall.data.sync.DirectorySyncFolder
 import com.hazia.medicall.data.sync.FolderLayout
+import com.hazia.medicall.data.sync.SyncFolder
 import com.hazia.medicall.data.sync.completeLines
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -71,6 +72,16 @@ class MedicAllDeviceTest {
         /** Folders whose open throws, as a revoked grant would. */
         val broken = mutableSetOf<String>()
 
+        /** Folders already open whose every read now throws, as when their grant is revoked under them. */
+        val revoked = mutableSetOf<String>()
+
+        private inner class Revocable(val label: String, val inner: SyncFolder) : SyncFolder by inner {
+            override fun read(path: String): ByteArray? {
+                if (label in revoked) throw java.io.IOException("the grant of $label was revoked")
+                return inner.read(path)
+            }
+        }
+
         /** Databases open now, by folder id: none is left open by an open that was not Ready. */
         val openNow: Set<String> get() = databases.keys
 
@@ -81,7 +92,7 @@ class MedicAllDeviceTest {
             val db = existing ?: openMedicAllDatabase(File(dir, f.databaseName)).database.also { opened += it }
             val work = File(dir, f.id)
             val result = com.hazia.medicall.data.MedicAllCore.open(
-                db, DirectorySyncFolder(Paths.get(f.folderUri)), name, passphrase,
+                db, Revocable(f.label, DirectorySyncFolder(Paths.get(f.folderUri))), name, passphrase,
                 DirectoryBlobStore(work.toPath().resolve("blobs")), File(work, "work"), System::currentTimeMillis, ZoneOffset.UTC,
             )
             if (existing == null) {
@@ -188,6 +199,34 @@ class MedicAllDeviceTest {
         assertEquals(Verdict.Ok, one.removeForgottenPin(passB.toCharArray()))
         assertFalse(one.lock.isOn)
         assertFalse(FolderRegistry(phone.settings).lock().pinHash != null)
+    }
+
+    @Test
+    fun withNoFolderJoinedAForgottenPinNeedsNoPassphrase_SPEC_R11() = runBlocking {
+        // A settings file that opens but does not read (a downgrade, say): the lock stays closed and no folder is
+        // known. Nothing is there to guard, and no passphrase could be checked, so Forgot PIN must not dead-end.
+        val phone = Phone("phone-1")
+        phone.settings.bytes = """{"v":2,"folders":[]}""".encodeToByteArray()
+        val one = phone.device()
+        assertTrue(one.lock.isLocked)
+        assertEquals(Verdict.Ok, one.removeForgottenPin("anything-typed-at-all".toCharArray()))
+        assertFalse(one.lock.isOn)
+        assertFalse(one.lock.isLocked)
+    }
+
+    @Test
+    fun aFolderThatCannotBeReadDoesNotStopAForgottenPin_SPEC_R11() = runBlocking {
+        val phone = Phone("phone-1")
+        val one = phone.device()
+        one.join("Folder A", folderA.toString(), passA.toCharArray())
+        one.join("Folder B", folderB.toString(), passB.toCharArray())
+        one.lock.setPin("2468".toCharArray())
+        // Folder A's grant is revoked under it: checking its key file throws.
+        phone.revoked += "Folder A"
+        // A wrong passphrase is counted, not thrown; the passphrase of the readable folder still opens.
+        assertEquals(Verdict.Wrong(4), one.removeForgottenPin("not-the-passphrase-at-all".toCharArray()))
+        assertEquals(Verdict.Ok, one.removeForgottenPin(passB.toCharArray()))
+        assertFalse(one.lock.isOn)
     }
 
     @Test

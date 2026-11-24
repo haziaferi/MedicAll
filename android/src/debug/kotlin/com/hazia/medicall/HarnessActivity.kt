@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -50,6 +51,8 @@ class HarnessActivity : Activity() {
     private lateinit var mainView: View
     private lateinit var lockView: View
     private lateinit var pinField: EditText
+    private lateinit var pinSetField: EditText
+    private lateinit var newPinField: EditText
     private lateinit var lockPassphraseField: EditText
     private lateinit var lockStatus: TextView
 
@@ -67,6 +70,8 @@ class HarnessActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Until the lock is known to be off, the window is kept out of screenshots and the Recents thumbnail (SPEC:R11).
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         mainView = buildMain()
         lockView = buildLock()
         // Nothing of a folder shows until the first lock check has run (SPEC:R11).
@@ -121,7 +126,7 @@ class HarnessActivity : Activity() {
         stateView = TextView(this).also(column::addView)
         passphraseField = secretField("Passphrase (at least $MIN_PASSPHRASE characters)").also(column::addView)
         textField = EditText(this).apply {
-            hint = "Label, name, date, PIN (old new), or DELETE"
+            hint = "Label, name, date, or DELETE"
             inputType = InputType.TYPE_CLASS_TEXT
         }.also(column::addView)
 
@@ -160,16 +165,33 @@ class HarnessActivity : Activity() {
         button(column, "Check files") { onCore("Check files") { c -> val r = c.checkFiles(backup()); ui { lastReport = "$r" }; "check done" } }
 
         heading(column, "App lock")
-        button(column, "Set PIN") { val pin = text("").toCharArray(); work { lock().setPin(pin); pin.fill(' '); "the lock is on" } }
-        button(column, "Change PIN (old new)") {
-            val parts = text("").split(" ").filter { it.isNotEmpty() }
-            work { require(parts.size == 2) { "Type the old PIN, a space, the new PIN." }; "change: ${lock().changePin(parts[0].toCharArray(), parts[1].toCharArray())}" }
+        // PINs go in number-password fields of their own, never the plain text field, and are cleared at once.
+        pinSetField = pinInput("PIN").also(column::addView)
+        newPinField = pinInput("New PIN (to change it)").also(column::addView)
+        button(column, "Set PIN") { val pin = take(pinSetField); work { try { lock().setPin(pin) } finally { pin.fill(' ') }; "the lock is on" } }
+        button(column, "Change PIN") {
+            val old = take(pinSetField)
+            val new = take(newPinField)
+            work { try { "change: ${lock().changePin(old, new)}" } finally { old.fill(' '); new.fill(' ') } }
         }
-        button(column, "Turn lock off (PIN)") { val pin = text("").toCharArray(); work { "turn off: ${lock().turnOff(pin)}".also { pin.fill(' ') } } }
+        button(column, "Turn lock off (PIN)") {
+            val pin = take(pinSetField)
+            work {
+                val v = try { lock().turnOff(pin) } finally { pin.fill(' ') }
+                if (v == Verdict.Ok) BiometricGate.forget()
+                "turn off: $v"
+            }
+        }
         button(column, "Timeout (next)") { work { val l = lock(); val now = phone!!.lockMinutes(); val m = AppLock.TIMEOUTS[(AppLock.TIMEOUTS.indexOf(now) + 1) % AppLock.TIMEOUTS.size]; l.setTimeout(m); "lock after $m min in the background" } }
         button(column, "Fingerprint on/off") {
             if (!BiometricGate.available(this)) message("No strong biometric is enrolled on this phone.")
-            else work { val l = lock(); val on = !phone!!.fingerprintOn(); l.setFingerprint(on); "fingerprint ${if (on) "on" else "off"}" }
+            else work {
+                val l = lock()
+                val on = !phone!!.fingerprintOn()
+                // The key is made here, past the lock, so it holds only the fingerprints enrolled now.
+                if (on) { BiometricGate.enroll(); l.setFingerprint(true) } else { l.setFingerprint(false); BiometricGate.forget() }
+                "fingerprint ${if (on) "on" else "off"}"
+            }
         }
         return ScrollView(this).apply { fitsSystemWindows = true; addView(column) }
     }
@@ -185,15 +207,22 @@ class HarnessActivity : Activity() {
             attempt { try { lock().unlock(pin) } finally { pin.fill(' ') } }
         }
         button(column, "Use fingerprint") {
-            BiometricGate.ask(this, "Unlock MedicAll", "Use the PIN",
+            if (phone?.fingerprintOn() != true) lockStatus.text = "The fingerprint is off: use the PIN."
+            else BiometricGate.ask(this, "Unlock MedicAll", "Use the PIN",
                 passed = { attempt { lock().unlockedByFingerprint(); Verdict.Ok } },
-                notPassed = { reason -> lockStatus.text = reason })
+                notPassed = { reason -> lockStatus.text = reason },
+                lost = { worker.execute { runCatching { lock().setFingerprint(false) } } })
         }
         lockPassphraseField = secretField("Forgot the PIN? A folder's passphrase").also(column::addView)
         button(column, "Forgot PIN") {
             val typed = CharArray(lockPassphraseField.length()) { lockPassphraseField.text[it] }
             lockPassphraseField.text.clear()
-            attempt("The PIN is removed: set a new one.") { try { need().device.removeForgottenPin(typed) } finally { typed.fill(' ') } }
+            attempt("The PIN is removed: set a new one.") {
+                val v = try { need().device.removeForgottenPin(typed) } finally { typed.fill(' ') }
+                // The lock is off, its fingerprint with it: the key goes too.
+                if (v == Verdict.Ok) BiometricGate.forget()
+                v
+            }
         }
         return ScrollView(this).apply { fitsSystemWindows = true; addView(column) }
     }
@@ -312,6 +341,12 @@ class HarnessActivity : Activity() {
     /** Redraws the folders, the selected folder's profiles with their switches, its files and bin, and the lock. Worker thread. */
     private fun refresh() {
         val p = phone ?: return
+        // While the lock is on, no screenshot or Recents thumbnail holds the listing (SPEC:R11).
+        val secure = p.device.lock.isOn
+        runOnUiThread {
+            if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         if (p.device.lock.isLocked) return
         val text = runCatching {
             val folders = p.device.folders().joinToString("\n") { f: JoinedFolder ->
@@ -362,6 +397,14 @@ class HarnessActivity : Activity() {
     }
 
     private fun text(default: String) = textField.text.toString().trim().ifEmpty { default }
+
+    /** A number-password field kept out of the keyboard's learning and the phone's password manager. */
+    private fun pinInput(hint: String) = secretField(hint).apply {
+        inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+    }
+
+    /** The field's characters, with no String made of them; the field is cleared. */
+    private fun take(field: EditText): CharArray = CharArray(field.length()) { field.text[it] }.also { field.text.clear() }
 
     private companion object {
         const val PICK_JOIN = 1

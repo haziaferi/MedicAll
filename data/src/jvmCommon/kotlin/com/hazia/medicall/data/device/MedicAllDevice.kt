@@ -112,8 +112,14 @@ class MedicAllDevice(
 
     /**
      * A forgotten PIN (SPEC:R11): removed when [passphrase] opens any open folder. A wrong one counts as a wrong PIN,
-     * and during a wait it is not checked ([AppLock.removeForgottenPinIf]).
+     * and during a wait it is not checked ([AppLock.removeForgottenPinIf]). A folder that cannot be read (its grant
+     * revoked) counts as not opened, so the others are still tried and the try is still counted. With no folder
+     * joined the device holds nothing the lock guards and no passphrase could be checked, so the PIN goes (outside
+     * a wait): otherwise a lock whose state did not read would close the app for good.
      */
     fun removeForgottenPin(passphrase: CharArray): Verdict =
-        lock.removeForgottenPinIf { cores.values.toList().any { it.passphraseOpens(passphrase) } }
+        lock.removeForgottenPinIf {
+            registry.folders().isEmpty() ||
+                cores.values.toList().any { core -> runCatching { core.passphraseOpens(passphrase) }.getOrDefault(false) }
+        }
 }
