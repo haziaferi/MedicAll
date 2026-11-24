@@ -36,11 +36,20 @@ data class ProfileInfo(val id: String, val name: String, val kind: String, val r
 /**
  * What [MedicAllCore.syncNow] did: [imported] is the import's report. [unlockAgain] is true when the key
  * folder changed under this device's cipher (a key-file clash settled against the key it holds, or a
- * key it lacks retired beside the folder's): the shell must unlock again with the passphrase and
- * build the core again ([MedicAllCore.unlockOrCreate], [MedicAllCore.open]), and until it does, lines
- * sealed under the keys it lacks are held.
+ * key it lacks retired beside the folder's, or the passphrase changed on another device): the shell must
+ * open the core again ([MedicAllCore.open]) with the kept passphrase, or ask for the new one when that is
+ * refused. Until it does, lines sealed under the keys it lacks are held, and no backup is written.
  */
 data class SyncReport(val imported: ImportReport, val unlockAgain: Boolean)
+
+/** What [MedicAllCore.open] gives: the core, or why the passphrase did not unlock the sync key. */
+sealed interface Opened {
+    /** [unreadableKeyIds] as [Unlock.Unlocked] names them: older keys whose lines stay unreadable for now. */
+    class Ready(val core: MedicAllCore, val unreadableKeyIds: List<String>) : Opened
+
+    /** [reason] is never [Unlock.Unlocked]: a wrong passphrase, a damaged key file, or a peer's key file not arrived yet. */
+    class Refused(val reason: Unlock) : Opened
+}
 
 /** A file reference as [MedicAllCore.files] lists it; [removedAt] is set while it is in the bin. */
 data class FileInfo(val id: String, val profileId: String, val name: String, val sha256: String, val removedAt: Long?)
@@ -54,8 +63,9 @@ data class FileInfo(val id: String, val profileId: String, val name: String, val
  *
  * - [syncNow] settles key-file clashes ([KeyFolder.settleConflicts]), publishes the files the logs will
  *   name, writes the logs, then reads the peers' logs and fetches the files they name ([BlobSync], [FolderSync]).
- * - The backup calls take the backup folder each time, since a shell may pick it after this is built,
- *   and the passphrase, which seals the backups (SPEC:R109).
+ * - The backup calls take the backup folder each time, since a shell may pick it after this is built.
+ *   They seal with the passphrase that unlocked the sync key ([open] keeps a copy, [close] clears it),
+ *   so a backup never goes out under a passphrase sync does not use (SPEC:R109).
  *
  * Blocking where the folders block: call it off the main thread.
  */
@@ -65,6 +75,7 @@ class MedicAllCore private constructor(
     device: String,
     clock: HybridClock,
     private val cipher: LineCipher,
+    private val passphrase: CharArray,
     blobStore: BlobStore,
     private val wallMillis: () -> Long,
     private val workDir: File,
@@ -162,15 +173,22 @@ class MedicAllCore private constructor(
         return keys.retiredKeyIds().any { !cipher.knows(it) && it !in retiredUnopened }
     }
 
-    /** Writes a backup of [kind] to [target] under [passphrase] ([BackupWriter], SPEC:R22). */
-    suspend fun backUp(target: BackupTarget, passphrase: CharArray, kind: BackupKind = BackupKind.LATEST): BackupResult =
-        BackupWriter(db, blobs, SevenZip, target, wallMillis, zone, workDir).write(kind, passphrase)
+    /**
+     * Writes a backup of [kind] to [target] ([BackupWriter], SPEC:R22) under the passphrase that unlocked sync
+     * (SPEC:R109). While the folder's key is not the one that passphrase opened (changed on another device),
+     * it writes nothing and returns [PASSPHRASE_CHANGED]: the shell opens the core again with the new one.
+     */
+    suspend fun backUp(target: BackupTarget, kind: BackupKind = BackupKind.LATEST): BackupResult {
+        if (keys.currentKeyId() != cipher.currentKeyId) return BackupResult.Failed(PASSPHRASE_CHANGED)
+        return BackupWriter(db, blobs, SevenZip, target, wallMillis, zone, workDir).write(kind, passphrase)
+    }
 
     /**
      * Restores the newest backup in [target] ([BackupWriter.newestFirst], [BackupRestore]); null when it
-     * does not open with [passphrase]. Throws an [IllegalStateException] when [target] holds no backup.
+     * does not open with [passphrase], by default the one that unlocked sync (an older backup may need an
+     * older passphrase, which the person types). Throws an [IllegalStateException] when [target] holds no backup.
      */
-    suspend fun restoreBackup(target: BackupTarget, passphrase: CharArray): RestoreReport? {
+    suspend fun restoreBackup(target: BackupTarget, passphrase: CharArray = this.passphrase): RestoreReport? {
         val name = BackupWriter.newestFirst(target.list()).firstOrNull() ?: throw IllegalStateException("The backup folder holds no backup.")
         val copy = File.createTempFile(TEMP_PREFIX, ".7z", workDir)
         try {
@@ -182,9 +200,12 @@ class MedicAllCore private constructor(
         }
     }
 
-    /** Checks every file against its hash and repairs the damaged ones from [target]'s backups ([IntegrityCheck], SPEC:R23). */
-    suspend fun checkFiles(target: BackupTarget, passphrase: CharArray): IntegrityReport =
+    /** Checks every file against its hash and repairs the damaged ones from [target]'s backups that open with the sync passphrase ([IntegrityCheck], SPEC:R23). */
+    suspend fun checkFiles(target: BackupTarget): IntegrityReport =
         IntegrityCheck(blobs, target, SevenZip, workDir).run(passphrase)
+
+    /** Clears this core's copy of the passphrase; the core must not be used after. */
+    fun close() = passphrase.fill(' ')
 
     companion object {
         /** The kind every profile has in version 1 (SPEC:R15: pet is in the data model, not offered). */
@@ -192,24 +213,34 @@ class MedicAllCore private constructor(
         const val PET = "pet"
         private const val TEMP_PREFIX = "medicall-restore-"
 
+        /** [backUp]'s reason when the passphrase was changed on another device since this core was opened. */
+        const val PASSPHRASE_CHANGED = "The passphrase was changed on another device: enter the new one before the next backup."
+
         /**
-         * Builds the data layer over [db], whose clock resumes from what it stored, writing [folder] as
-         * [device] with [cipher] (from [unlockOrCreate]), keeping files in [blobStore], and working in [workDir].
+         * Unlocks (or makes) the sync key with [passphrase] ([unlockOrCreate]) and builds the data layer over
+         * [db], whose clock resumes from what it stored, writing [folder] as [device], keeping files in
+         * [blobStore], and working in [workDir]. The core keeps its own copy of [passphrase] for the backups
+         * (SPEC:R109); the caller still owns, and clears, [passphrase].
          */
         suspend fun open(
             db: MedicAllDatabase,
             folder: SyncFolder,
             device: String,
-            cipher: LineCipher,
+            passphrase: CharArray,
             blobStore: BlobStore,
             workDir: File,
             wallMillis: () -> Long = System::currentTimeMillis,
             zone: ZoneId = ZoneId.systemDefault(),
             recovered: Boolean = false,
-        ): MedicAllCore {
+        ): Opened {
+            val unlocked = when (val u = unlockOrCreate(folder, passphrase, device)) {
+                is Unlock.Unlocked -> u
+                else -> return Opened.Refused(u)
+            }
             workDir.mkdirs()
             val clock = db.syncDao().loadClock(device, wallMillis)
-            return MedicAllCore(db, folder, device, clock, cipher, blobStore, wallMillis, workDir, zone, recovered)
+            val core = MedicAllCore(db, folder, device, clock, unlocked.cipher, passphrase.copyOf(), blobStore, wallMillis, workDir, zone, recovered)
+            return Opened.Ready(core, unlocked.unreadableKeyIds)
         }
 
         /**

@@ -313,11 +313,13 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Why:** Separate passphrases would make the sync logs unreadable between devices or make the automatic restore ask each time; a stable passphrase keeps every backup usable for repair (R23), and day-to-day access is the app lock's job (R11).
 
+**Evidence:** Backups are sealed with the passphrase that opened the sync key, which the data layer keeps from the moment it opens; after a change made on another device, this device writes no backup until it is given the new passphrase (`peerPassphraseChangeIsNoticed_SPEC_R109`; owner, 2026-11-24, review finding M2). Not checked: the change screen, its wording and the fresh backups right after a change, which wait for the settings work.
+
 **Acceptance:** A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 
 **Not:** Separate passphrases for sync and backups.
 
-**Since:** 2026-11-23 · owner · agreed rewording
+**Since:** 2026-11-24 · owner · agreed rewording
 
 ### D-R11 · App lock
 
@@ -1553,7 +1555,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R07 · How changes land: `main`'s ruleset requires a pull request and blocks force pushes and deletion. The README states this as its "How changes land" section, and each pull request's description names its method.
 - R08 · Languages: With the phone set to Italian once Italian ships, every string is Italian; with it set to English, no Italian bureaucracy label appears.
 - R09 · Test devices: Each phase's walk record names all three phones.
-- R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again.
+- R10 · Encryption at rest: The database file and an attachment copied off the device do not open without the key; a restart does not ask for the passphrase again; a new database key sets the old database aside instead of deleting it.
 - R109 · One passphrase for devices, sync and backups: A backup opens by hand with the passphrase; right after a change, a new automatic and weekly backup exist that open only with the new one, and a second device asks once for it.
 - R11 · App lock: With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 - R12 · Network use: The only network call site in the code is the medicine-list download, and it sends no profile data.

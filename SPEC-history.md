@@ -133,3 +133,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-23 · R07 · changed · merge method per PR: squash by default, rebase for clean commits, merge commits only to sync branches · owner
 - 2026-11-23 · R07 · changed · no linear-history rule on main, as the ruleset has it; merge commits not limited to other branches · owner
 - 2026-11-24 · R10 · changed · database key random and kept in the key store, never derived from the passphrase; a lost key sets the database aside · owner
+- 2026-11-24 · R109 · changed · backups sealed with the passphrase that opened sync; none written after a change elsewhere until the new one is given · owner
