@@ -1,0 +1,176 @@
+package com.hazia.medicall.core.lock
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/** The app lock of SPEC:R11, on an elapsed clock the test moves. Every PIN is invented. */
+class AppLockTest {
+
+    private var now = 1_000_000L
+    private var saved: LockState = LockState.OFF
+    private fun lock(state: LockState = saved) = AppLock(state, { now }, { saved = it })
+
+    private val pin = "2468".toCharArray()
+    private fun pin(s: String) = s.toCharArray()
+    private val SECOND = 1_000L
+    private val MINUTE = 60_000L
+
+    @Test
+    fun aPinIsFourToSixDigits_SPEC_R11() {
+        for (bad in listOf("123", "1234567", "12a4", "")) {
+            assertFailsWith<IllegalArgumentException>(bad) { lock().setPin(pin(bad)) }
+        }
+        lock().setPin(pin("2468"))
+        assertTrue(lock().isOn)
+        saved = LockState.OFF
+        lock().setPin(pin("246813"))
+        assertTrue(lock().isOn)
+    }
+
+    @Test
+    fun aLockThatIsOnStartsLockedAndOpensWithItsPin_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        assertTrue(l.isLocked)
+        assertIs<Verdict.Wrong>(l.unlock(pin("1357")))
+        assertTrue(l.isLocked)
+        assertEquals(Verdict.Ok, l.unlock(pin))
+        assertFalse(l.isLocked)
+    }
+
+    @Test
+    fun theLockClosesAfterTheTimeout_SPEC_R11() {
+        val l = lock()
+        l.setPin(pin)
+        assertEquals(Verdict.Ok, l.unlock(pin))
+        l.onBackground(); now += 59 * SECOND; l.onForeground()
+        assertFalse(l.isLocked)
+        l.onBackground(); now += 60 * SECOND; l.onForeground()
+        assertTrue(l.isLocked)
+
+        assertEquals(Verdict.Ok, l.unlock(pin))
+        l.setTimeout(0)
+        l.onBackground(); l.onForeground()
+        assertTrue(l.isLocked)
+        assertFailsWith<IllegalArgumentException> { l.setTimeout(2) }
+        assertEquals(0, saved.timeoutMinutes)
+    }
+
+    @Test
+    fun anUnlockedLockWithNoPinNeverCloses_SPEC_R11() {
+        val l = lock()
+        l.onBackground(); now += 60 * MINUTE; l.onForeground()
+        assertFalse(l.isOn)
+        assertFalse(l.isLocked)
+    }
+
+    @Test
+    fun wrongTriesWaitLonger_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        repeat(4) { assertEquals(Verdict.Wrong(4 - it), l.unlock(pin("1357"))) }
+        assertEquals(Verdict.Wrong(0), l.unlock(pin("1357")))
+        assertEquals(Verdict.Wait(30 * SECOND), l.unlock(pin))
+        now += 10 * SECOND
+        assertEquals(Verdict.Wait(20 * SECOND), l.unlock(pin))
+        assertTrue(l.isLocked)
+        now += 20 * SECOND
+        assertEquals(Verdict.Wait(60 * SECOND), l.unlock(pin("1357")))
+        // Doubling, capped at one hour.
+        var expected = 60 * SECOND
+        repeat(10) {
+            now += expected
+            expected = minOf(expected * 2, 60 * MINUTE)
+            assertEquals(Verdict.Wait(expected), l.unlock(pin("1357")))
+        }
+        now += expected
+        assertEquals(Verdict.Ok, l.unlock(pin))
+        assertEquals(0, saved.wrongTries)
+        l.onBackground(); now += 2 * MINUTE; l.onForeground()
+        assertEquals(Verdict.Wrong(4), l.unlock(pin("1357")))
+    }
+
+    @Test
+    fun triesSurviveARestart_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        repeat(5) { l.unlock(pin("1357")) }
+        now += 5 * SECOND
+        val again = lock()
+        assertTrue(again.isLocked)
+        assertEquals(Verdict.Wait(25 * SECOND), again.unlock(pin))
+    }
+
+    @Test
+    fun aClockSetBackDoesNotEndTheWait_SPEC_R11() {
+        lock().setPin(pin)
+        repeat(5) { lock().unlock(pin("1357")) }
+        // A reboot: elapsed time starts again below the last wrong try.
+        now = 2_000L
+        val l = lock()
+        assertEquals(Verdict.Wait(30 * SECOND), l.unlock(pin))
+        now += 30 * SECOND
+        assertEquals(Verdict.Ok, l.unlock(pin))
+    }
+
+    @Test
+    fun stateHoldsNoPin_SPEC_R11() {
+        val secret = pin("975318")
+        lock().setPin(secret)
+        val bytes = saved.encode()
+        assertFalse("975318" in bytes.decodeToString())
+        assertFalse(bytes.toList().windowed(6).any { it == "975318".encodeToByteArray().toList() })
+        val back = LockState.decode(bytes)
+        assertEquals(saved, back)
+        assertEquals(Verdict.Ok, lock(back).unlock(pin("975318")))
+    }
+
+    @Test
+    fun anUnreadableStateIsOff_SPEC_R11() {
+        assertEquals(LockState.OFF, LockState.decode("not a lock".encodeToByteArray()))
+        assertEquals(LockState.OFF, LockState.decode(ByteArray(0)))
+    }
+
+    @Test
+    fun fingerprintUnlocksOnlyWhenOn_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        assertFailsWith<IllegalStateException> { l.unlockedByFingerprint() }
+        assertTrue(l.isLocked)
+        assertEquals(Verdict.Ok, l.unlock(pin))
+        l.setFingerprint(true)
+        l.onBackground(); now += 2 * MINUTE; l.onForeground()
+        assertTrue(l.isLocked)
+        l.unlockedByFingerprint()
+        assertFalse(l.isLocked)
+        assertFailsWith<IllegalStateException> { lock(LockState.OFF).setFingerprint(true) }
+    }
+
+    @Test
+    fun changeAndTurnOffNeedTheOldPin_SPEC_R11() {
+        val l = lock()
+        l.setPin(pin)
+        assertFailsWith<IllegalStateException> { l.setPin(pin("1111")) }
+        assertEquals(Verdict.Wrong(4), l.changePin(pin("1357"), pin("1111")))
+        assertEquals(Verdict.Ok, l.changePin(pin, pin("1111")))
+        assertEquals(Verdict.Ok, lock().unlock(pin("1111")))
+        assertEquals(Verdict.Wrong(4), l.turnOff(pin))
+        assertEquals(Verdict.Ok, l.turnOff(pin("1111")))
+        assertFalse(lock().isOn)
+    }
+
+    @Test
+    fun aForgottenPinIsRemoved_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        repeat(5) { l.unlock(pin("1357")) }
+        l.removeForgottenPin()
+        assertFalse(l.isOn)
+        assertFalse(l.isLocked)
+        assertEquals(LockState.OFF.copy(timeoutMinutes = saved.timeoutMinutes), saved)
+    }
+}
