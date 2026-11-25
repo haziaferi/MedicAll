@@ -19,6 +19,13 @@ internal interface RowTable {
     /** Whether [row] has this table's groups, fields and value types; one that does not is skipped on import. */
     fun fits(row: Row): Boolean
 
+    /**
+     * [row] as an older version wrote it, in this version's groups, with the stamps it came with. Every row read
+     * from a folder or a backup goes through it before any merge, so the merge compares like with like whatever
+     * order the lines arrive in.
+     */
+    fun upgrade(row: Row): Row = row
+
     /** The rows [row] needs present first, as (table, id): what its foreign keys name. */
     fun parents(row: Row): List<Pair<String, String>>
 }
@@ -34,8 +41,10 @@ internal class EntityTable<E>(
     private val remove: suspend (List<String>) -> Unit,
     private val toRow: (E) -> Row,
     private val fromRow: (Row) -> E,
+    private val upgradeRow: (Row) -> Row = { it },
     private val parentsOf: (E) -> List<Pair<String, String>>,
 ) : RowTable {
+    override fun upgrade(row: Row) = upgradeRow(row)
     override suspend fun load(ids: Collection<String>) = byIds(ids.toList()).map(toRow)
     override suspend fun all() = every().map(toRow)
     override suspend fun save(rows: Collection<Row>) = put(rows.map(fromRow))

@@ -127,7 +127,7 @@ class MedicAllCore private constructor(
             val s = writes.clock.tick()
             writes.merger.created(store, Row(PROFILE, id, mapOf(
                 NAME to Group(s, mapOf("name" to name)),
-                DETAILS to Group(s, mapOf("kind" to kind)),
+                DETAILS to Group(s, mapOf("kind" to kind, "birth_date" to birthDate)),
                 BIRTH to Group(s, mapOf("birth_date" to birthDate)),
                 REMOVED to Group(s, mapOf("removed_at" to null)),
                 MODULES to Group(s, allModulesOn()),

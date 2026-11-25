@@ -159,6 +159,23 @@ class AndroidDeviceTest {
         Unit
     }
 
+    // A settings file that did not read is kept for repair: the folders it names keep their passphrases and databases.
+    @Test
+    fun noSweepWhileASettingsFileIsKeptForRepair_SPEC_R110() = runBlocking {
+        val orphan = "orphan-$run"
+        KeyVault.forFolder(context, orphan).storePassphrase("invented-orphan-passphrase".toCharArray())
+        val kept = File(context.filesDir, KeyVault.DEVICE_FILE_NAME + KeyVault.LOST_SUFFIX + "1-$run")
+        kept.writeBytes(ByteArray(64) { 3 })
+        try {
+            assertFalse(device().sweepOrphans { it == orphan })
+            assertTrue(File(context.filesDir, "passphrase-$orphan.sealed").exists())
+        } finally {
+            kept.delete()
+            context.filesDir.listFiles { f -> orphan in f.name }?.forEach { it.delete() }
+        }
+        Unit
+    }
+
     /** Every file the app holds in its private storage, with its size. */
     private fun appFiles(): Set<String> =
         listOf(context.filesDir, context.getDatabasePath("x").parentFile!!).flatMap { dir ->

@@ -402,11 +402,11 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Why:** A household sharing one folder would send every adult's records to every phone; a carer and the person both getting the same alarm would double every dose reminder.
 
-**Evidence:** Each joined folder has its own database on the device, with its own key (R10), so no record of one folder is written to another. The switches stay on the device and are never synced or backed up; the device that created a profile is synced with it, so its default comes back after a rebuild, while a switch set by hand returns to its default. A profile whose creator is unknown (written before the origin was recorded) has reminders off on every device until switched on, so no reminder is doubled (owner, 2026-11-24, several folders per device).
+**Evidence:** Each joined folder has its own database on the device, with its own key (R10), so no record of one folder is written to another. The switches stay on the device and are never synced or backed up; the device that created a profile is synced with it, so its default comes back after a rebuild, while a switch set by hand returns to its default. A profile whose creator is unknown (written before the origin was recorded) has reminders off on every device until switched on, so no reminder is doubled (owner, 2026-11-24, several folders per device). A profile in the bin fires no reminder and is not shown; taken out, its switches are as they were (2026-11-25).
 
 **Acceptance:** A profile synced to a second device fires no reminder there until its switch is turned on; a device that joins only folder B holds no record of folder A.
 
-**Since:** 2026-11-24 · owner · agreed rewording
+**Since:** 2026-11-25 · owner · agreed rewording
 
 ### D-R15 · Record identity
 

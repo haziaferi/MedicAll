@@ -79,7 +79,9 @@ class BackupRestore internal constructor(
         val rows = mutableListOf<Row>()
         var ahead = 0
         for (line in lines) {
-            val record = runCatching { RecordCodec.decode(line) }.getOrNull() as? RowRecord
+            val decoded = runCatching { RecordCodec.decode(line) }.getOrNull() as? RowRecord
+            // In this version's groups first, as an import reads a folder line ([RowTable.upgrade]).
+            val record = decoded?.let { r -> tables[r.row.table]?.let { RowRecord(it.upgrade(r.row)) } }
             when {
                 record == null || tables[record.row.table]?.fits(record.row) != true -> skipped++
                 LineGuard.isAhead(record, wall) -> ahead++

@@ -148,3 +148,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-24 · R110 · changed · evidence: a profile of unknown origin has reminders off everywhere · owner
 - 2026-11-25 · R11 · changed · evidence: a damaged device file and a restart during a wait · owner
 - 2026-11-25 · R14 · changed · birth date from 1900-01-01 to today · owner
+- 2026-11-25 · R110 · changed · evidence: a profile in the bin fires no reminder and is not shown · owner

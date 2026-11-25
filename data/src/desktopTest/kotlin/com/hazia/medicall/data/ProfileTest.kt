@@ -161,6 +161,52 @@ class ProfileTest {
         assertEquals("1981-06-06", a.profile(id).birthDate)
     }
 
+    /** Seals [row] as a line of [device]'s log, segment 0. */
+    private fun writeLine(device: String, row: Row) {
+        val folder = DirectorySyncFolder(syncRoot)
+        val cipher = assertIs<Unlock.Unlocked>(KeyFolder(folder).unlock(passphrase.copyOf())).cipher
+        folder.replace(FolderLayout.segment(device, 0), (cipher.seal(RecordCodec.encode(RowRecord(row)).encodeToByteArray()) + "\n").encodeToByteArray())
+    }
+
+    private fun profileRow(id: String, details: Group, birth: Group?): Row {
+        val s = Stamp(10, "dev-first")
+        return Row(PROFILE, id, buildMap {
+            put(NAME, Group(s, mapOf("name" to "Profile A")))
+            put(DETAILS, details)
+            birth?.let { put(BIRTH, it) }
+            put(REMOVED, Group(s, mapOf("removed_at" to null)))
+            put(MODULES, Group(s, allModulesOn()))
+            put(ORIGIN, Group(s, mapOf("created_device" to "dev-first")))
+        })
+    }
+
+    @Test
+    fun anOlderBirthDateConvergesWhateverTheReadOrder_SPEC_R16() = runBlocking {
+        val id = Ids.new()
+        // An old build sets the birth date at 20; a new one, not having seen it, changes the kind at 30.
+        val old = profileRow(id, Group(Stamp(20, "dev-old"), mapOf("birth_date" to "1985-05-05", "kind" to "person")), birth = null)
+        val new = profileRow(
+            id,
+            Group(Stamp(30, "dev-new"), mapOf("kind" to "pet", "birth_date" to "1990-01-01")),
+            birth = Group(Stamp(10, "dev-first"), mapOf("birth_date" to "1990-01-01")),
+        )
+        // Device Y reads the old line, then the new one.
+        val y = device("dev-y")
+        y.syncNow()
+        writeLine("dev-old", old)
+        y.syncNow()
+        writeLine("dev-new", new)
+        y.syncNow()
+        // Device W reads both in one import.
+        val w = device("dev-w")
+        w.syncNow()
+        for (d in listOf(y, w)) {
+            val p = d.profile(id)
+            assertEquals("1985-05-05", p.birthDate)
+            assertEquals(MedicAllCore.PET, p.kind)
+        }
+    }
+
     @Test
     fun anOlderProfileLineReadsWithDefaults_SPEC_R14() = runBlocking {
         val a = device("dev-a")
@@ -229,7 +275,8 @@ class ProfileTest {
         val row = p.toRow()
         assertEquals(Stamp(5, "dev-old"), row.groups.getValue(BIRTH).stamp)
         assertEquals(Stamp(5, "dev-old"), row.groups.getValue(DETAILS).stamp)
-        assertEquals(mapOf("kind" to "person"), row.groups.getValue(DETAILS).values)
+        // The details group keeps a copy of the birth date for builds from before schema 3.
+        assertEquals(mapOf("kind" to "person", "birth_date" to "1990-01-01"), row.groups.getValue(DETAILS).values)
         // The old file's triggers went before the upgrade; the current ones are made again.
         val triggers = runBlocking {
             db.useReaderConnection { c -> c.usePrepared("SELECT name FROM sqlite_master WHERE type = 'trigger'") { s -> buildList { while (s.step()) add(s.getText(0)) } } }

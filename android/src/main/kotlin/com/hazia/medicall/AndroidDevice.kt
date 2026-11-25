@@ -76,12 +76,16 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
     }
 
     /**
-     * Clears what a crash or a lost settings file left for folders no longer joined: their passphrase files are
-     * deleted (they would open the folder's future content), and a database still under its live name is set
-     * aside, kept (SPEC:R10), as when a folder is left. Database keys, set-aside files and file stores stay.
-     * [only] limits it to some folder ids (tests: other runs share the app's storage).
+     * Clears what a crash left for folders no longer joined: their passphrase files are deleted (they would open the
+     * folder's future content), and a database still under its live name is set aside, kept (SPEC:R10), as when a
+     * folder is left. Database keys, set-aside files and file stores stay. Nothing is swept while a settings file
+     * that did not read is kept aside ([KeyVault.LOST_SUFFIX]): the folders it names may be repaired from it, and
+     * they need their passphrases and databases then. Returns whether it swept. [only] limits it to some folder ids
+     * (tests: other runs share the app's storage).
      */
-    suspend fun sweepOrphans(only: (String) -> Boolean = { true }) = device.withJoinedIds { joined ->
+    suspend fun sweepOrphans(only: (String) -> Boolean = { true }): Boolean = device.withJoinedIds { joined ->
+        val forRepair = app.filesDir.listFiles()?.any { it.name.startsWith(KeyVault.DEVICE_FILE_NAME + KeyVault.LOST_SUFFIX) } == true
+        if (forRepair) return@withJoinedIds false
         fun orphan(id: String) = id !in joined && only(id)
         app.filesDir.listFiles()?.forEach { f ->
             val id = PASSPHRASE_FILE.matchEntire(f.name)?.groupValues?.get(1) ?: return@forEach
@@ -91,6 +95,7 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
             val id = DATABASE_FILE.matchEntire(name)?.groupValues?.get(1) ?: continue
             if (orphan(id)) setAsideDatabaseFiles(app.getDatabasePath(name).path, System.currentTimeMillis())
         }
+        true
     }
 
     /**

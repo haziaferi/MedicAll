@@ -110,11 +110,27 @@ internal interface ProfileDao {
 }
 
 internal fun profileTable(dao: ProfileDao) =
-    EntityTable(dao::profiles, dao::allProfiles, dao::putProfiles, dao::deleteProfiles, ProfileEntity::toRow, Row::toProfileEntity) { emptyList() }
+    EntityTable(dao::profiles, dao::allProfiles, dao::putProfiles, dao::deleteProfiles, ProfileEntity::toRow, Row::toProfileEntity, Row::withBirthGroup) { emptyList() }
 
+/**
+ * A profile row written before schema 3 has no [BIRTH] group: its birth date sits in [DETAILS]. It gets a [BIRTH]
+ * group with that value and the details stamp, so the merge weighs it against the other birth dates, not against
+ * the kind. A row that has [BIRTH] is left as it is.
+ */
+internal fun Row.withBirthGroup(): Row {
+    if (BIRTH in groups) return this
+    val details = groups[DETAILS] ?: return this
+    if ("birth_date" !in details.values) return this
+    return copy(groups = groups + (BIRTH to Group(details.stamp, mapOf("birth_date" to details.values["birth_date"]))))
+}
+
+/**
+ * [DETAILS] also carries a copy of the birth date, unread by this version ([BIRTH] holds it), so a build from
+ * before schema 3, which reads the birth date from [DETAILS] alone, never takes it for cleared.
+ */
 internal fun ProfileEntity.toRow() = Row(PROFILE, id, mapOf(
     NAME to Group(Stamp(nameHlc, nameDevice), mapOf("name" to name)),
-    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("kind" to kind)),
+    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("kind" to kind, "birth_date" to birthDate)),
     BIRTH to Group(Stamp(birthHlc, birthDevice), mapOf("birth_date" to birthDate)),
     REMOVED to Group(Stamp(removedHlc, removedDevice), mapOf("removed_at" to removedAt)),
     MODULES to Group(Stamp(modulesHlc, modulesDevice), mapOf(
@@ -131,15 +147,13 @@ internal fun allModulesOn(): Map<String, Any?> = Module.entries.associate { it.k
 
 /**
  * Throws when [this] is not a profile this version can read. A row without [MODULES] or [ORIGIN] (written
- * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN]. A [DETAILS] group
- * that still carries the birth date (written before [BIRTH] existed) gives it, with its stamp, unless [BIRTH]
- * is later.
+ * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN]. The birth date is
+ * [BIRTH]'s; a row without it is read as [withBirthGroup] makes it.
  */
 internal fun Row.toProfileEntity(): ProfileEntity {
     val name = groups.getValue(NAME)
     val details = groups.getValue(DETAILS)
-    val birth = listOfNotNull(groups[BIRTH], details.takeIf { "birth_date" in it.values }).maxByOrNull { it.stamp }
-        ?: Group(NEVER_WRITTEN, mapOf("birth_date" to null))
+    val birth = withBirthGroup().groups[BIRTH] ?: Group(NEVER_WRITTEN, mapOf("birth_date" to null))
     val removed = groups.getValue(REMOVED)
     val modules = groups[MODULES] ?: Group(NEVER_WRITTEN, allModulesOn())
     val origin = groups[ORIGIN] ?: Group(NEVER_WRITTEN, mapOf("created_device" to null))
