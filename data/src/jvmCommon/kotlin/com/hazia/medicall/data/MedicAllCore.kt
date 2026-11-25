@@ -152,29 +152,40 @@ class MedicAllCore private constructor(
 
     /**
      * Whether profile [profileId]'s reminders fire on this device (SPEC:R110): as set here, or by default only on
-     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled.
+     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled. A
+     * profile in the bin has them off (SPEC:R18); its setting comes back with it.
      */
-    suspend fun remindersHere(profileId: String): Boolean =
-        onDevice.get(profileId)?.reminders ?: (profile(profileId).createdDevice == device)
-
-    /** Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. */
-    suspend fun setRemindersHere(profileId: String, on: Boolean) {
-        profile(profileId)
-        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(reminders = on))
+    suspend fun remindersHere(profileId: String): Boolean {
+        val p = profile(profileId)
+        if (p.removedAt != null) return false
+        return onDevice.get(profileId)?.reminders ?: (p.createdDevice == device)
     }
 
-    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default. */
-    suspend fun shownHere(profileId: String): Boolean = onDevice.get(profileId)?.shown ?: run { profile(profileId); true }
+    /**
+     * Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. One statement per
+     * switch, so two switches set at once both hold.
+     */
+    suspend fun setRemindersHere(profileId: String, on: Boolean) {
+        profile(profileId)
+        onDevice.setReminders(profileId, on)
+    }
 
-    /** Sets [shownHere] on this device alone. */
+    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default; never while in the bin. */
+    suspend fun shownHere(profileId: String): Boolean {
+        val p = profile(profileId)
+        if (p.removedAt != null) return false
+        return onDevice.get(profileId)?.shown ?: true
+    }
+
+    /** Sets [shownHere] on this device alone, as [setRemindersHere]. */
     suspend fun setShownHere(profileId: String, on: Boolean) {
         profile(profileId)
-        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(shown = on))
+        onDevice.setShown(profileId, on)
     }
 
     private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
 
-    /** SPEC:R14: a birth date is a date, never an age, and not after today in this core's time zone. */
+    /** SPEC:R14: a birth date is a date, never an age, not before [EARLIEST_BIRTH_DATE] and not after today in this core's time zone. */
     private fun checkBirthDate(birthDate: String?) {
         if (birthDate == null) return
         val date = try {
@@ -182,6 +193,7 @@ class MedicAllCore private constructor(
         } catch (e: DateTimeParseException) {
             throw IllegalArgumentException("not a date: $birthDate", e)
         }
+        require(!date.isBefore(EARLIEST_BIRTH_DATE)) { "a birth date before $EARLIEST_BIRTH_DATE: $birthDate" }
         require(!date.isAfter(Instant.ofEpochMilli(wallMillis()).atZone(zone).toLocalDate())) { "a birth date after today: $birthDate" }
     }
 
@@ -315,6 +327,9 @@ class MedicAllCore private constructor(
         const val PERSON = "person"
         const val PET = "pet"
         private const val TEMP_PREFIX = "medicall-restore-"
+
+        /** The earliest birth date taken (SPEC:R14): an earlier one is a typing slip, not a person. */
+        val EARLIEST_BIRTH_DATE: LocalDate = LocalDate.of(1900, 1, 1)
 
         /** [backUp]'s reason when the passphrase was changed on another device since this core was opened. */
         const val PASSPHRASE_CHANGED = "The passphrase was changed on another device: enter the new one before the next backup."

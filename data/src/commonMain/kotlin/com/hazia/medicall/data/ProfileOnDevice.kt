@@ -34,4 +34,18 @@ internal interface ProfileOnDeviceDao {
 
     @Upsert
     suspend fun put(row: ProfileOnDeviceEntity)
+
+    /** Sets [reminders] alone, in one statement, so a [setShown] at the same time is never lost. */
+    @Query(
+        "INSERT INTO profile_device(profile_id, reminders) VALUES (:profileId, :reminders) " +
+            "ON CONFLICT(profile_id) DO UPDATE SET reminders = excluded.reminders"
+    )
+    suspend fun setReminders(profileId: String, reminders: Boolean)
+
+    /** Sets [shown] alone, in one statement, so a [setReminders] at the same time is never lost. */
+    @Query(
+        "INSERT INTO profile_device(profile_id, shown) VALUES (:profileId, :shown) " +
+            "ON CONFLICT(profile_id) DO UPDATE SET shown = excluded.shown"
+    )
+    suspend fun setShown(profileId: String, shown: Boolean)
 }

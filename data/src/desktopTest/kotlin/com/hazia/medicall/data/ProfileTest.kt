@@ -140,9 +140,11 @@ class ProfileTest {
     fun birthDateIsADate_SPEC_R14() = runBlocking {
         val a = device("dev-a")
         val id = a.addProfile("Profile A")
-        for (bad in listOf("1990-02-30", "34", "", today.plusDays(1).toString())) {
+        for (bad in listOf("1990-02-30", "34", "", today.plusDays(1).toString(), "1899-12-31", "0001-01-01")) {
             assertFailsWith<IllegalArgumentException>(bad) { a.setBirthDate(id, bad) }
         }
+        a.setBirthDate(id, "1900-01-01")
+        assertEquals("1900-01-01", a.profile(id).birthDate)
         a.setBirthDate(id, "1990-02-28")
         assertEquals("1990-02-28", a.profile(id).birthDate)
         a.setBirthDate(id, today.toString())
