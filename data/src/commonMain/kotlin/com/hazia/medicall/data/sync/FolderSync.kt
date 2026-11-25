@@ -280,14 +280,16 @@ internal class FolderSync(
         return ImportReport(changed, dropped)
     }
 
-    /** A record this version can apply, or null: unreadable, or not a row of any table it has. */
+    /** A record this version can apply, in its groups ([RowTable.upgrade]), or null: unreadable, or not a row of any table it has. */
     private fun readable(line: String): Record? {
         val record = try {
             RecordCodec.decode(line)
         } catch (_: IllegalArgumentException) {
             return null
         }
-        return record.takeIf { it !is RowRecord || tables[it.row.table]?.fits(it.row) == true }
+        if (record !is RowRecord) return record
+        val table = tables[record.row.table] ?: return null
+        return RowRecord(table.upgrade(record.row)).takeIf { table.fits(it.row) }
     }
 
     /** Appends every row and purge in the outbox to this device's log, then compacts it if due. */

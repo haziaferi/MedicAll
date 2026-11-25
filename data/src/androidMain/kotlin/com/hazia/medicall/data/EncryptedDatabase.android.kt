@@ -3,6 +3,8 @@ package com.hazia.medicall.data
 import android.content.Context
 import androidx.room.Room
 import androidx.room.useReaderConnection
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
@@ -45,7 +47,7 @@ fun openEncryptedDatabase(
     val open = openOrRecover(
         build = {
             Room.databaseBuilder<MedicAllDatabase>(app, name)
-                .openHelperFactory(SupportOpenHelperFactory(literal))
+                .openHelperFactory(DropTriggersBeforeUpgrade(SupportOpenHelperFactory(literal)))
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .addCallback(SchemaTriggers)
                 .build()
@@ -70,6 +72,43 @@ private fun recoveringMarker(app: Context, name: String) = java.io.File(app.getD
 
 /** Beside a database made anew until its own log is read back; not a database file, so never set aside with one. */
 private const val RECOVERING_SUFFIX = ".recovering"
+
+/**
+ * The open-helper side of [dropTriggersBeforeUpgrade]: Room's driver hook does not run in open-helper mode, so
+ * the triggers are dropped in `onConfigure`, which SQLite's open helper calls before `onUpgrade`. Without it, a
+ * migration that rebuilds a table fails on the triggers that name it.
+ */
+private class DropTriggersBeforeUpgrade(private val delegate: SupportSQLiteOpenHelper.Factory) : SupportSQLiteOpenHelper.Factory {
+    override fun create(configuration: SupportSQLiteOpenHelper.Configuration): SupportSQLiteOpenHelper {
+        val room = configuration.callback
+        val callback = object : SupportSQLiteOpenHelper.Callback(room.version) {
+            override fun onConfigure(db: SupportSQLiteDatabase) {
+                room.onConfigure(db)
+                val version = db.version
+                if (version != 0 && version < SCHEMA_VERSION) {
+                    val triggers = db.query("SELECT name FROM sqlite_master WHERE type = 'trigger'").use { c ->
+                        buildList { while (c.moveToNext()) add(c.getString(0)) }
+                    }
+                    triggers.forEach { db.execSQL("DROP TRIGGER IF EXISTS `$it`") }
+                }
+            }
+
+            override fun onCreate(db: SupportSQLiteDatabase) = room.onCreate(db)
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = room.onUpgrade(db, oldVersion, newVersion)
+            override fun onDowngrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = room.onDowngrade(db, oldVersion, newVersion)
+            override fun onOpen(db: SupportSQLiteDatabase) = room.onOpen(db)
+            override fun onCorruption(db: SupportSQLiteDatabase) = room.onCorruption(db)
+        }
+        return delegate.create(
+            SupportSQLiteOpenHelper.Configuration.builder(configuration.context)
+                .name(configuration.name)
+                .callback(callback)
+                .noBackupDirectory(configuration.useNoBackupDirectory)
+                .allowDataLossOnRecovery(configuration.allowDataLossOnRecovery)
+                .build()
+        )
+    }
+}
 
 /** sqlcipher-android does not load its native library by itself; every process that opens the database needs it once. */
 private object SqlCipherLibrary {

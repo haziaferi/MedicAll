@@ -1,5 +1,7 @@
 package com.hazia.medicall.data
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import com.hazia.medicall.core.crypto.KeyFolder
 import com.hazia.medicall.core.crypto.LineCipher
 import com.hazia.medicall.core.crypto.Unlock
@@ -127,7 +129,8 @@ class MedicAllCore private constructor(
             val s = writes.clock.tick()
             writes.merger.created(store, Row(PROFILE, id, mapOf(
                 NAME to Group(s, mapOf("name" to name)),
-                DETAILS to Group(s, mapOf("birth_date" to birthDate, "kind" to kind)),
+                DETAILS to Group(s, mapOf("kind" to kind, "birth_date" to birthDate)),
+                BIRTH to Group(s, mapOf("birth_date" to birthDate)),
                 REMOVED to Group(s, mapOf("removed_at" to null)),
                 MODULES to Group(s, allModulesOn()),
                 ORIGIN to Group(s, mapOf("created_device" to device)),
@@ -137,13 +140,12 @@ class MedicAllCore private constructor(
     }
 
     /**
-     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Only the field
-     * changes: the kind is the one the row holds inside the write's transaction, so a peer's change of kind that an
-     * import brings in meanwhile is kept.
+     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Its own group
+     * ([BIRTH]), so a change of kind on another device survives the merge (SPEC:R16).
      */
     suspend fun setBirthDate(id: String, birthDate: String?) {
         checkBirthDate(birthDate)
-        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate) }
+        writes.edit(PROFILE, id, BIRTH) { mapOf("birth_date" to birthDate) }
     }
 
     /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
@@ -152,29 +154,45 @@ class MedicAllCore private constructor(
 
     /**
      * Whether profile [profileId]'s reminders fire on this device (SPEC:R110): as set here, or by default only on
-     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled.
+     * the device that created it. A profile of unknown origin has them off, so no reminder is ever doubled. A
+     * profile in the bin has them off (SPEC:R18); its setting comes back with it.
      */
-    suspend fun remindersHere(profileId: String): Boolean =
-        onDevice.get(profileId)?.reminders ?: (profile(profileId).createdDevice == device)
-
-    /** Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. */
-    suspend fun setRemindersHere(profileId: String, on: Boolean) {
-        profile(profileId)
-        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(reminders = on))
+    suspend fun remindersHere(profileId: String): Boolean {
+        val p = profile(profileId)
+        if (p.removedAt != null) return false
+        return onDevice.get(profileId)?.reminders ?: (p.createdDevice == device)
     }
 
-    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default. */
-    suspend fun shownHere(profileId: String): Boolean = onDevice.get(profileId)?.shown ?: run { profile(profileId); true }
+    /**
+     * Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. One statement per
+     * switch, so two switches set at once both hold. A profile that is not there (purged, say) throws an
+     * [IllegalArgumentException].
+     */
+    suspend fun setRemindersHere(profileId: String, on: Boolean) = onThisDevice(profileId) { onDevice.setReminders(profileId, on) }
 
-    /** Sets [shownHere] on this device alone. */
-    suspend fun setShownHere(profileId: String, on: Boolean) {
-        profile(profileId)
-        onDevice.put((onDevice.get(profileId) ?: ProfileOnDeviceEntity(profileId)).copy(shown = on))
+    /** Checks profile [profileId] is there and runs [write] in one transaction, so a purge cannot fall between them. */
+    private suspend fun onThisDevice(profileId: String, write: suspend () -> Unit) {
+        db.useWriterConnection { connection ->
+            connection.immediateTransaction {
+                profile(profileId)
+                write()
+            }
+        }
     }
+
+    /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default; never while in the bin. */
+    suspend fun shownHere(profileId: String): Boolean {
+        val p = profile(profileId)
+        if (p.removedAt != null) return false
+        return onDevice.get(profileId)?.shown ?: true
+    }
+
+    /** Sets [shownHere] on this device alone, as [setRemindersHere]. */
+    suspend fun setShownHere(profileId: String, on: Boolean) = onThisDevice(profileId) { onDevice.setShown(profileId, on) }
 
     private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
 
-    /** SPEC:R14: a birth date is a date, never an age, and not after today in this core's time zone. */
+    /** SPEC:R14: a birth date is a date, never an age, not before [EARLIEST_BIRTH_DATE] and not after today in this core's time zone. */
     private fun checkBirthDate(birthDate: String?) {
         if (birthDate == null) return
         val date = try {
@@ -182,13 +200,14 @@ class MedicAllCore private constructor(
         } catch (e: DateTimeParseException) {
             throw IllegalArgumentException("not a date: $birthDate", e)
         }
+        require(!date.isBefore(EARLIEST_BIRTH_DATE)) { "a birth date before $EARLIEST_BIRTH_DATE: $birthDate" }
         require(!date.isAfter(Instant.ofEpochMilli(wallMillis()).atZone(zone).toLocalDate())) { "a birth date after today: $birthDate" }
     }
 
     /** Renames profile [id]: its name group only, so a change of kind elsewhere survives the merge (SPEC:R16). */
     suspend fun rename(id: String, name: String) = writes.edit(PROFILE, id, NAME) { mapOf("name" to name) }
 
-    /** Sets profile [id]'s kind: its details group, apart from the name; the birth date is the one the row holds inside the write. */
+    /** Sets profile [id]'s kind: its details group, apart from the name and the birth date (SPEC:R16). */
     suspend fun changeKind(id: String, kind: String) = writes.edit(PROFILE, id, DETAILS) { mapOf("kind" to kind) }
 
     /** Every profile, the bin's included, by name then id. */
@@ -295,14 +314,7 @@ class MedicAllCore private constructor(
      * True when [passphrase] opens this sync folder's key file now (SPEC:R109), as a forgotten PIN asks (SPEC:R11).
      * Nothing is kept: the cipher it makes is dropped, and the caller still owns, and clears, [passphrase].
      */
-    fun passphraseOpens(passphrase: CharArray): Boolean {
-        val copy = passphrase.copyOf()
-        return try {
-            KeyFolder(folder).unlock(copy) is Unlock.Unlocked
-        } finally {
-            copy.fill(' ')
-        }
-    }
+    fun passphraseOpens(passphrase: CharArray): Boolean = passphraseOpens(folder, passphrase)
 
     /** Clears this core's copy of the passphrase; the backup calls refuse after it. */
     fun close() {
@@ -315,6 +327,9 @@ class MedicAllCore private constructor(
         const val PERSON = "person"
         const val PET = "pet"
         private const val TEMP_PREFIX = "medicall-restore-"
+
+        /** The earliest birth date taken (SPEC:R14): an earlier one is a typing slip, not a person. */
+        val EARLIEST_BIRTH_DATE: LocalDate = LocalDate.of(1900, 1, 1)
 
         /** [backUp]'s reason when the passphrase was changed on another device since this core was opened. */
         const val PASSPHRASE_CHANGED = "The passphrase was changed on another device: enter the new one before the next backup."
@@ -371,6 +386,19 @@ class MedicAllCore private constructor(
                     if (folder.list(FolderLayout.DEVICES).any { it != device }) Unlock.KeyFileNotArrived
                     else Unlock.Unlocked(keys.create(passphrase))
                 else -> u
+            }
+        }
+
+        /**
+         * True when [passphrase] opens [folder]'s key file now, with no core and no database (SPEC:R11: a forgotten
+         * PIN with a folder that stays shut). Reads only; the caller still owns, and clears, [passphrase].
+         */
+        fun passphraseOpens(folder: SyncFolder, passphrase: CharArray): Boolean {
+            val copy = passphrase.copyOf()
+            return try {
+                KeyFolder(folder).unlock(copy) is Unlock.Unlocked
+            } finally {
+                copy.fill(' ')
             }
         }
 

@@ -17,6 +17,7 @@ import com.hazia.medicall.data.isRecovering
 import com.hazia.medicall.data.openEncryptedDatabase
 import com.hazia.medicall.data.ownLogRead
 import com.hazia.medicall.data.setAsideDatabaseFiles
+import kotlinx.coroutines.runBlocking
 import java.io.File
 
 /**
@@ -41,6 +42,7 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
         registry,
         open = ::open,
         lock = AppLock(registry.lock(), SystemClock::elapsedRealtime, registry::saveLock),
+        syncFolderOf = ::syncFolder,
         setAside = { f ->
             databases.remove(f.id)?.close()
             setAsideDatabaseFiles(app.getDatabasePath(f.databaseName).path, System.currentTimeMillis())
@@ -65,10 +67,35 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
 
     fun setBackup(folderId: String, tree: Uri) = registry.setBackup(folderId, tree.toString())
 
-    fun close() {
-        device.folders().forEach { device.core(it.id)?.close() }
-        databases.values.forEach { it.close() }
-        databases.clear()
+    /** Closes every core and database, waiting for a join, open or leave that is running to end first. */
+    fun close() = runBlocking {
+        device.closeAll {
+            databases.values.forEach { it.close() }
+            databases.clear()
+        }
+    }
+
+    /**
+     * Clears what a crash left for folders no longer joined: their passphrase files are deleted (they would open the
+     * folder's future content), and a database still under its live name is set aside, kept (SPEC:R10), as when a
+     * folder is left. Database keys, set-aside files and file stores stay. Nothing is swept while a settings file
+     * that did not read is kept aside ([KeyVault.LOST_SUFFIX]): the folders it names may be repaired from it, and
+     * they need their passphrases and databases then. Returns whether it swept. [only] limits it to some folder ids
+     * (tests: other runs share the app's storage).
+     */
+    suspend fun sweepOrphans(only: (String) -> Boolean = { true }): Boolean = device.withJoinedIds { joined ->
+        val forRepair = app.filesDir.listFiles()?.any { it.name.startsWith(KeyVault.DEVICE_FILE_NAME + KeyVault.LOST_SUFFIX) } == true
+        if (forRepair) return@withJoinedIds false
+        fun orphan(id: String) = id !in joined && only(id)
+        app.filesDir.listFiles()?.forEach { f ->
+            val id = PASSPHRASE_FILE.matchEntire(f.name)?.groupValues?.get(1) ?: return@forEach
+            if (orphan(id)) f.delete()
+        }
+        for (name in app.databaseList()) {
+            val id = DATABASE_FILE.matchEntire(name)?.groupValues?.get(1) ?: continue
+            if (orphan(id)) setAsideDatabaseFiles(app.getDatabasePath(name).path, System.currentTimeMillis())
+        }
+        true
     }
 
     /**
@@ -107,11 +134,13 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
             return opened
         } finally {
             key.bytes.fill(0)
-            // Not kept: closed, and removed when it was made just now for a folder not joined.
+            // Not kept: closed, and removed when it was made just now: its key is dropped, so it holds nothing any open
+            // could read, and setting it aside on the next try would only pile up empty files. A joined folder keeps
+            // its mark of a database made anew (its old one was set aside), so the open that succeeds reads its log back.
             db?.close()
-            if (db != null && !joined && key.isNew) {
+            if (db != null && key.isNew) {
                 app.deleteDatabase(f.databaseName)
-                ownLogRead(app, f.databaseName)
+                if (!joined) ownLogRead(app, f.databaseName)
             }
         }
     }
@@ -145,5 +174,9 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
 
         /** One write journal per joined folder ([SafSyncFolder]): the same path in two folders must not share a note. */
         const val JOURNALS = "saf-journals"
+
+        /** A joined folder's passphrase file ([KeyVault.forFolder]) and live database ([JoinedFolder.databaseName]). */
+        private val PASSPHRASE_FILE = Regex("passphrase-([A-Za-z0-9-]+)\\.sealed")
+        private val DATABASE_FILE = Regex("medicall-([A-Za-z0-9-]+)\\.db")
     }
 }

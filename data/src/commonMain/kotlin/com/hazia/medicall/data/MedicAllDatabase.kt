@@ -5,6 +5,9 @@ import androidx.room.ConstructedBy
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.RoomDatabaseConstructor
+import androidx.room.migration.AutoMigrationSpec
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
 import com.hazia.medicall.data.blob.BlobDao
 import com.hazia.medicall.data.blob.BlobHeldEntity
 import com.hazia.medicall.data.blob.BlobSeenEntity
@@ -36,7 +39,7 @@ import com.hazia.medicall.data.sync.WaitingEntity
         BlobSeenEntity::class, BlobHeldEntity::class, ProfileOnDeviceEntity::class,
     ],
     version = SCHEMA_VERSION,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3, spec = BirthGroupSplit::class)],
     exportSchema = true,
 )
 @ConstructedBy(MedicAllDatabaseConstructor::class)
@@ -72,5 +75,18 @@ expect object MedicAllDatabaseConstructor : RoomDatabaseConstructor<MedicAllData
 
 const val DATABASE_NAME = "medicall.db"
 
-/** The schema's version; a file below it is upgraded by Room's migrations on open. Version 2 adds the profile's modules and origin (SPEC:R14). */
-internal const val SCHEMA_VERSION = 2
+/**
+ * The schema's version; a file below it is upgraded by Room's migrations on open. Version 2 adds the profile's
+ * modules and origin (SPEC:R14); version 3 gives the birth date its own group's stamp (SPEC:R16).
+ */
+internal const val SCHEMA_VERSION = 3
+
+/**
+ * Schema 2 to 3: the birth date starts with the stamp the details group gave it, so a peer's later change of
+ * kind or birth date still wins, and no earlier one does.
+ */
+internal class BirthGroupSplit : AutoMigrationSpec {
+    override fun onPostMigrate(connection: SQLiteConnection) {
+        connection.execSQL("UPDATE profile SET birth_hlc = details_hlc, birth_device = details_device")
+    }
+}

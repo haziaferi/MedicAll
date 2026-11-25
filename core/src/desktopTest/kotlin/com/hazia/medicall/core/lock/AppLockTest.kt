@@ -97,6 +97,39 @@ class AppLockTest {
     }
 
     @Test
+    fun aSaveThatFailsChangesNothing_SPEC_R11() {
+        lock().setPin(pin)
+        var failing = true
+        val l = AppLock(saved, { now }, { if (failing) throw java.io.IOException("invented full disk") else saved = it })
+        assertFailsWith<java.io.IOException> { l.setTimeout(15) }
+        assertFailsWith<java.io.IOException> { l.setFingerprint(true) }
+        // What the lock holds still matches what is kept: the next save writes the right state.
+        failing = false
+        l.setTimeout(5)
+        assertEquals(5, saved.timeoutMinutes)
+        assertFalse(saved.fingerprint)
+        assertTrue(l.isOn)
+    }
+
+    @Test
+    fun wrongPinsAtOnceAreEachCounted_SPEC_R11() {
+        lock().setPin(pin)
+        val l = lock()
+        val verdicts = java.util.Collections.synchronizedList(mutableListOf<Verdict>())
+        val threads = List(6) { Thread { verdicts += l.unlock(pin("1357")) } }
+        threads.forEach { it.start() }
+        threads.forEach { it.join(30_000) }
+        assertEquals(
+            listOf(Verdict.Wrong(4), Verdict.Wrong(3), Verdict.Wrong(2), Verdict.Wrong(1), Verdict.Wrong(0), Verdict.Wait(30 * SECOND)).toSet(),
+            verdicts.toSet(),
+        )
+        assertEquals(6, verdicts.size)
+        // The sixth came during the wait: refused unchecked, not counted.
+        assertEquals(5, saved.wrongTries)
+        assertTrue(l.isLocked)
+    }
+
+    @Test
     fun anUnlockedLockWithNoPinNeverCloses_SPEC_R11() {
         val l = lock()
         l.onBackground(); now += 60 * MINUTE; l.onForeground()

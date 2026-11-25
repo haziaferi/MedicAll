@@ -15,6 +15,9 @@ import com.hazia.medicall.data.sync.DirectorySyncFolder
 import com.hazia.medicall.data.sync.FolderLayout
 import com.hazia.medicall.data.sync.RecordCodec
 import com.hazia.medicall.data.sync.RowRecord
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Rule
@@ -130,6 +133,57 @@ class ProfileOnDeviceTest {
         assertTrue(rebuilt.remindersHere(id))
         // A switch set by hand is not in the folder: it is back to its default.
         assertTrue(rebuilt.shownHere(id))
+    }
+
+    @Test
+    fun aProfileInTheBinFiresNoReminderAndIsNotShown_SPEC_R110() = runBlocking {
+        val a = device("dev-a")
+        val id = a.addProfile("Profile A")
+        a.remove(PROFILE, id)
+        assertFalse(a.remindersHere(id))
+        assertFalse(a.shownHere(id))
+        // Taken out of the bin, its switches are as they were.
+        a.restore(PROFILE, id)
+        assertTrue(a.remindersHere(id))
+        assertTrue(a.shownHere(id))
+    }
+
+    @Test
+    fun twoSwitchesSetAtOnceBothHold_SPEC_R110() = runBlocking {
+        val a = device("dev-a")
+        val ids = List(40) { a.addProfile("Profile $it") }
+        coroutineScope {
+            for (id in ids) {
+                launch(Dispatchers.IO) { a.setRemindersHere(id, false) }
+                launch(Dispatchers.IO) { a.setShownHere(id, false) }
+            }
+        }
+        for (id in ids) {
+            assertFalse(a.remindersHere(id), id)
+            assertFalse(a.shownHere(id), id)
+        }
+    }
+
+    @Test
+    fun aSwitchSetAsItsProfileIsPurgedSaysNoProfile_SPEC_R110() = runBlocking {
+        val a = device("dev-a")
+        val ids = List(60) { a.addProfile("Profile $it") }
+        ids.forEach { a.remove(PROFILE, it) }
+        wall += 31 * DAY
+        val failures = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
+        coroutineScope {
+            launch(Dispatchers.IO) { a.purgeExpired() }
+            for (id in ids) launch(Dispatchers.IO) {
+                try {
+                    a.setRemindersHere(id, true)
+                } catch (e: Exception) {
+                    failures += e
+                }
+            }
+        }
+        // Set before the purge (then purged with it) or refused after it: never a database error.
+        assertTrue(failures.all { it is IllegalArgumentException }, failures.map { it::class.simpleName to it.message }.distinct().toString())
+        assertEquals(emptyList(), opened.single().profileDeviceDao().all())
     }
 
     @Test

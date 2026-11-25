@@ -116,9 +116,15 @@ class AppLock(
     fun removeForgottenPinIf(passphraseOpens: () -> Boolean): Verdict =
         attempt({ passphraseOpens() }) { removeForgottenPin() }
 
-    /** Whether [pin] hashes to the PIN of [seen]. */
-    private fun pinMatches(pin: CharArray): (LockState) -> Boolean =
-        { seen -> hash(pin, seen.salt!!.hexBytes()).constantTimeEquals(seen.pinHash!!.hexBytes()) }
+    /** Whether [pin] hashes to the PIN of [seen]; the hash made is cleared once compared. */
+    private fun pinMatches(pin: CharArray): (LockState) -> Boolean = { seen ->
+        val made = hash(pin, seen.salt!!.hexBytes())
+        try {
+            made.constantTimeEquals(seen.pinHash!!.hexBytes())
+        } finally {
+            made.fill(0)
+        }
+    }
 
     /**
      * One try: nothing is checked during a wait; [right] runs outside this lock's monitor; a right one runs
@@ -160,7 +166,12 @@ class AppLock(
     private fun newPin(pin: CharArray): FreshPin {
         checkDigits(pin)
         val salt = secureRandomBytes(16)
-        return FreshPin(hash(pin, salt).hex(), salt.hex())
+        val made = hash(pin, salt)
+        return try {
+            FreshPin(made.hex(), salt.hex())
+        } finally {
+            made.fill(0)
+        }
     }
 
     @Synchronized private fun applyPin(fresh: FreshPin, onlyWhenOff: Boolean) {
@@ -181,9 +192,10 @@ class AppLock(
         return (last + waitAfter(state.wrongTries) - now).coerceAtLeast(0)
     }
 
+    /** Saves [new], then holds it: a save that throws leaves the lock as it was, matching what is kept. */
     private fun update(new: LockState) {
-        state = new
         save(new)
+        state = new
     }
 
     companion object {

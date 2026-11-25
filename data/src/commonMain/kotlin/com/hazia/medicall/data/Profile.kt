@@ -19,7 +19,12 @@ const val PROFILE = "profile"
  * device and a change of kind on another both survive the merge. Its removal is a group of its own.
  */
 internal const val NAME = "name"
+
+/** The kind. Lines written before schema 3 carry the birth date here too; [BIRTH] outranks it when later. */
 internal const val DETAILS = "details"
+
+/** The birth date, apart from the kind, so a birth date set on one device and a kind changed on another both hold. */
+internal const val BIRTH = "birth"
 internal const val REMOVED = "removed"
 
 /** The modules switched on or off, one Boolean per [Module.key] (SPEC:R14). */
@@ -71,6 +76,9 @@ internal data class ProfileEntity(
     @ColumnInfo(name = "created_device") val createdDevice: String? = null,
     @ColumnInfo(name = "origin_hlc", defaultValue = "0") val originHlc: Long = NEVER_WRITTEN.hlc,
     @ColumnInfo(name = "origin_device", defaultValue = "") val originDevice: String = NEVER_WRITTEN.device,
+    /** [birthDate]'s own stamp ([BIRTH]); schema 3 starts it at the details stamp. */
+    @ColumnInfo(name = "birth_hlc", defaultValue = "0") val birthHlc: Long = NEVER_WRITTEN.hlc,
+    @ColumnInfo(name = "birth_device", defaultValue = "") val birthDevice: String = NEVER_WRITTEN.device,
 ) {
     /** The modules switched on, in [Module]'s order. */
     val modules: Set<Module>
@@ -102,11 +110,28 @@ internal interface ProfileDao {
 }
 
 internal fun profileTable(dao: ProfileDao) =
-    EntityTable(dao::profiles, dao::allProfiles, dao::putProfiles, dao::deleteProfiles, ProfileEntity::toRow, Row::toProfileEntity) { emptyList() }
+    EntityTable(dao::profiles, dao::allProfiles, dao::putProfiles, dao::deleteProfiles, ProfileEntity::toRow, Row::toProfileEntity, Row::withBirthGroup) { emptyList() }
 
+/**
+ * A profile row written before schema 3 has no [BIRTH] group: its birth date sits in [DETAILS]. It gets a [BIRTH]
+ * group with that value and the details stamp, so the merge weighs it against the other birth dates, not against
+ * the kind. A row that has [BIRTH] is left as it is.
+ */
+internal fun Row.withBirthGroup(): Row {
+    if (BIRTH in groups) return this
+    val details = groups[DETAILS] ?: return this
+    if ("birth_date" !in details.values) return this
+    return copy(groups = groups + (BIRTH to Group(details.stamp, mapOf("birth_date" to details.values["birth_date"]))))
+}
+
+/**
+ * [DETAILS] also carries a copy of the birth date, unread by this version ([BIRTH] holds it), so a build from
+ * before schema 3, which reads the birth date from [DETAILS] alone, never takes it for cleared.
+ */
 internal fun ProfileEntity.toRow() = Row(PROFILE, id, mapOf(
     NAME to Group(Stamp(nameHlc, nameDevice), mapOf("name" to name)),
-    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("birth_date" to birthDate, "kind" to kind)),
+    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("kind" to kind, "birth_date" to birthDate)),
+    BIRTH to Group(Stamp(birthHlc, birthDevice), mapOf("birth_date" to birthDate)),
     REMOVED to Group(Stamp(removedHlc, removedDevice), mapOf("removed_at" to removedAt)),
     MODULES to Group(Stamp(modulesHlc, modulesDevice), mapOf(
         Module.MEDICINES.key to modulesMedicines,
@@ -122,11 +147,13 @@ internal fun allModulesOn(): Map<String, Any?> = Module.entries.associate { it.k
 
 /**
  * Throws when [this] is not a profile this version can read. A row without [MODULES] or [ORIGIN] (written
- * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN].
+ * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN]. The birth date is
+ * [BIRTH]'s; a row without it is read as [withBirthGroup] makes it.
  */
 internal fun Row.toProfileEntity(): ProfileEntity {
     val name = groups.getValue(NAME)
     val details = groups.getValue(DETAILS)
+    val birth = withBirthGroup().groups[BIRTH] ?: Group(NEVER_WRITTEN, mapOf("birth_date" to null))
     val removed = groups.getValue(REMOVED)
     val modules = groups[MODULES] ?: Group(NEVER_WRITTEN, allModulesOn())
     val origin = groups[ORIGIN] ?: Group(NEVER_WRITTEN, mapOf("created_device" to null))
@@ -136,7 +163,7 @@ internal fun Row.toProfileEntity(): ProfileEntity {
         name = name.values["name"] as String,
         nameHlc = name.stamp.hlc,
         nameDevice = name.stamp.device,
-        birthDate = details.values["birth_date"] as String?,
+        birthDate = birth.values["birth_date"] as String?,
         kind = details.values["kind"] as String,
         detailsHlc = details.stamp.hlc,
         detailsDevice = details.stamp.device,
@@ -152,5 +179,7 @@ internal fun Row.toProfileEntity(): ProfileEntity {
         createdDevice = origin.values["created_device"] as String?,
         originHlc = origin.stamp.hlc,
         originDevice = origin.stamp.device,
+        birthHlc = birth.stamp.hlc,
+        birthDevice = birth.stamp.device,
     )
 }

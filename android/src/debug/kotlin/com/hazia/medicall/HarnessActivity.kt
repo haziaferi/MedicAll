@@ -79,7 +79,7 @@ class HarnessActivity : Activity() {
         show()
         work {
             val p = AndroidDevice(this).also { phone = it }
-            val opened = runBlocking { p.openAll() }
+            val opened = runBlocking { p.sweepOrphans(); p.openAll() }
             folderId = p.device.folders().firstOrNull { p.device.core(it.id) != null }?.id
             val failed = opened.values.mapNotNull { it.exceptionOrNull()?.message }
             "Opened ${opened.count { it.value.getOrNull() is Opened.Ready }} of ${p.device.folders().size} folders as device ${p.deviceId}" +

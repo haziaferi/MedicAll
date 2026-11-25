@@ -1,6 +1,7 @@
 package com.hazia.medicall
 
 import androidx.room.useReaderConnection
+import androidx.room.useWriterConnection
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.hazia.medicall.data.openEncryptedDatabase
@@ -167,6 +168,43 @@ class EncryptedDatabaseTest {
         open.database.close()
         assertFalse(open.recovered)
         assertEquals(0, context.getDatabasePath(name).parentFile!!.listFiles { f -> f.name.startsWith("$name.unopenable-") }!!.size)
+    }
+
+    // SPEC:R15 an upgrade drops the old file's triggers first (a table-rebuilding migration would fail on them),
+    // and keeps each birth date's stamp.
+    @Test
+    fun anUpgradeDropsTheOldTriggersFirst_SPEC_R15() {
+        openAndProbe(keyA)
+        // Back to schema 2, as that version left it, with a trigger no version makes.
+        val old = openEncryptedDatabase(context, keyA, name).database
+        runBlocking {
+            old.useWriterConnection { c ->
+                for (sql in listOf(
+                    "INSERT INTO profile(id, name, name_hlc, name_device, birth_date, kind, details_hlc, details_device, removed_at, removed_hlc, removed_device) " +
+                        "VALUES ('p-old', 'Profile Old', 5, 'dev-old', '1990-01-01', 'person', 7, 'dev-old', NULL, 5, 'dev-old')",
+                    "ALTER TABLE profile DROP COLUMN birth_hlc",
+                    "ALTER TABLE profile DROP COLUMN birth_device",
+                    "CREATE TRIGGER old_sentinel AFTER UPDATE ON profile BEGIN SELECT 1; END",
+                    "PRAGMA user_version = 2",
+                )) c.usePrepared(sql) { it.step() }
+            }
+        }
+        old.close()
+
+        val db = openEncryptedDatabase(context, keyA, name).database
+        try {
+            val triggers = runBlocking {
+                db.useReaderConnection { c -> c.usePrepared("SELECT name FROM sqlite_master WHERE type = 'trigger'") { s -> buildList { while (s.step()) add(s.getText(0)) } } }
+            }
+            assertFalse(triggers.toString(), "old_sentinel" in triggers)
+            assertTrue(triggers.toString(), "profile_outbox_update" in triggers)
+            val stamp = runBlocking {
+                db.useReaderConnection { c -> c.usePrepared("SELECT birth_hlc, birth_device FROM profile WHERE id = 'p-old'") { s -> s.step(); s.getLong(0) to s.getText(1) } }
+            }
+            assertEquals(7L to "dev-old", stamp)
+        } finally {
+            db.close()
+        }
     }
 
     @Test

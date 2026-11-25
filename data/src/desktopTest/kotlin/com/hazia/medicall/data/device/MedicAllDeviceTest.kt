@@ -60,7 +60,7 @@ class MedicAllDeviceTest {
         fun device(): MedicAllDevice {
             val registry = FolderRegistry(settings)
             val lock = AppLock(registry.lock(), { elapsed }, registry::saveLock)
-            return MedicAllDevice(registry, ::open, lock) { f ->
+            return MedicAllDevice(registry, ::open, lock, { f -> syncFolder(f) }) { f ->
                 // As a shell does: the database closes first, then its file is moved aside.
                 databases.remove(f.id)?.close()
                 val db = File(dir, f.databaseName)
@@ -82,6 +82,11 @@ class MedicAllDeviceTest {
             }
         }
 
+        fun syncFolder(f: JoinedFolder): SyncFolder {
+            check(f.label !in broken) { "the grant of ${f.label} was revoked" }
+            return Revocable(f.label, DirectorySyncFolder(Paths.get(f.folderUri)))
+        }
+
         /** Databases open now, by folder id: none is left open by an open that was not Ready. */
         val openNow: Set<String> get() = databases.keys
 
@@ -92,7 +97,7 @@ class MedicAllDeviceTest {
             val db = existing ?: openMedicAllDatabase(File(dir, f.databaseName)).database.also { opened += it }
             val work = File(dir, f.id)
             val result = com.hazia.medicall.data.MedicAllCore.open(
-                db, Revocable(f.label, DirectorySyncFolder(Paths.get(f.folderUri))), name, passphrase,
+                db, syncFolder(f), name, passphrase,
                 DirectoryBlobStore(work.toPath().resolve("blobs")), File(work, "work"), System::currentTimeMillis, ZoneOffset.UTC,
             )
             if (existing == null) {
@@ -212,6 +217,22 @@ class MedicAllDeviceTest {
         assertEquals(Verdict.Ok, one.removeForgottenPin("anything-typed-at-all".toCharArray()))
         assertFalse(one.lock.isOn)
         assertFalse(one.lock.isLocked)
+    }
+
+    @Test
+    fun aShutFolderStillTakesAForgottenPin_SPEC_R11() = runBlocking {
+        val phone = Phone("phone-1")
+        val first = phone.device()
+        first.join("Folder A", folderA.toString(), passA.toCharArray())
+        first.join("Folder B", folderB.toString(), passB.toCharArray())
+        first.lock.setPin("2468".toCharArray())
+        // After a restart no folder opened (the key store not answering, say): the PIN is forgotten.
+        val again = phone.device()
+        assertTrue(again.lock.isLocked)
+        assertNull(again.core(again.folders().first().id))
+        assertEquals(Verdict.Wrong(4), again.removeForgottenPin("not-the-passphrase-at-all".toCharArray()))
+        assertEquals(Verdict.Ok, again.removeForgottenPin(passA.toCharArray()))
+        assertFalse(again.lock.isOn)
     }
 
     @Test

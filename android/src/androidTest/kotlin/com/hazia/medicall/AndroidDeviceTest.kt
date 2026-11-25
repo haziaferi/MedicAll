@@ -105,6 +105,77 @@ class AndroidDeviceTest {
         Unit
     }
 
+    // SPEC:R10 a folder whose key was lost and whose passphrase is refused leaves one set-aside database (its data),
+    // however many times it is tried: the empty ones made with a dropped key are not kept.
+    @Test
+    fun refusedOpensPileUpNoEmptyDatabases_SPEC_R10() = runBlocking {
+        val first = device()
+        val a = first.device.join("Folder A", treeA.uri.toString(), "invented-passphrase-a".toCharArray()) as Opened.Ready
+        a.core.addProfile("Profile A")
+        val id = first.device.folders().single().id
+        first.close()
+        // The key store lost the database key, and the kept passphrase no longer opens (changed elsewhere).
+        assertTrue(File(context.filesDir, "database-key-v2-$id.sealed").delete())
+        KeyVault.forFolder(context, id).storePassphrase("a-passphrase-changed-elsewhere".toCharArray())
+        repeat(3) {
+            val again = device()
+            assertTrue(again.openAll().values.single().getOrNull() is Opened.Refused)
+            again.close()
+        }
+        val aside = context.databaseList().filter { Regex("medicall-$id\\.db\\.unopenable-\\d+").matches(it) }
+        assertEquals(aside.toString(), 1, aside.size)
+        assertFalse("medicall-$id.db" in context.databaseList())
+        aside.forEach { context.deleteDatabase(it) }
+        context.databaseList().filter { it.startsWith("medicall-$id.db") }.forEach { context.deleteDatabase(it) }
+        File(context.getDatabasePath("medicall-$id.db").path + ".recovering").delete()
+        Unit
+    }
+
+    // A crash between storing a folder's vault and remembering the folder, or a lost settings file, leaves files of a
+    // folder no longer joined: its passphrase goes, its database is set aside, its key stays.
+    @Test
+    fun aSweepClearsWhatAFolderNoLongerJoinedLeft_SPEC_R110() = runBlocking {
+        val orphan = "orphan-$run"
+        KeyVault.forFolder(context, orphan).storePassphrase("invented-orphan-passphrase".toCharArray())
+        KeyVault.forFolder(context, orphan).store(ByteArray(32) { 7 })
+        val key = ByteArray(32) { 9 }
+        com.hazia.medicall.data.openEncryptedDatabase(context, key, "medicall-$orphan.db").database.close()
+        val first = device()
+        first.device.join("Folder A", treeA.uri.toString(), "invented-passphrase-a".toCharArray())
+        val joined = first.device.folders().single().id
+
+        first.sweepOrphans { it == orphan || it == joined }
+
+        assertFalse(File(context.filesDir, "passphrase-$orphan.sealed").exists())
+        assertTrue("the key stays", File(context.filesDir, "database-key-v2-$orphan.sealed").exists())
+        assertFalse("medicall-$orphan.db" in context.databaseList())
+        val aside = context.databaseList().filter { it.startsWith("medicall-$orphan.db.unopenable-") }
+        assertTrue(aside.isNotEmpty())
+        // The joined folder keeps everything.
+        assertTrue(File(context.filesDir, "passphrase-$joined.sealed").exists())
+        assertTrue("medicall-$joined.db" in context.databaseList())
+        aside.forEach { context.deleteDatabase(it) }
+        context.filesDir.listFiles { f -> orphan in f.name }?.forEach { it.delete() }
+        Unit
+    }
+
+    // A settings file that did not read is kept for repair: the folders it names keep their passphrases and databases.
+    @Test
+    fun noSweepWhileASettingsFileIsKeptForRepair_SPEC_R110() = runBlocking {
+        val orphan = "orphan-$run"
+        KeyVault.forFolder(context, orphan).storePassphrase("invented-orphan-passphrase".toCharArray())
+        val kept = File(context.filesDir, KeyVault.DEVICE_FILE_NAME + KeyVault.LOST_SUFFIX + "1-$run")
+        kept.writeBytes(ByteArray(64) { 3 })
+        try {
+            assertFalse(device().sweepOrphans { it == orphan })
+            assertTrue(File(context.filesDir, "passphrase-$orphan.sealed").exists())
+        } finally {
+            kept.delete()
+            context.filesDir.listFiles { f -> orphan in f.name }?.forEach { it.delete() }
+        }
+        Unit
+    }
+
     /** Every file the app holds in its private storage, with its size. */
     private fun appFiles(): Set<String> =
         listOf(context.filesDir, context.getDatabasePath("x").parentFile!!).flatMap { dir ->
