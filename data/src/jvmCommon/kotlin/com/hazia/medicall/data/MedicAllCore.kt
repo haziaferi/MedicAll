@@ -307,14 +307,7 @@ class MedicAllCore private constructor(
      * True when [passphrase] opens this sync folder's key file now (SPEC:R109), as a forgotten PIN asks (SPEC:R11).
      * Nothing is kept: the cipher it makes is dropped, and the caller still owns, and clears, [passphrase].
      */
-    fun passphraseOpens(passphrase: CharArray): Boolean {
-        val copy = passphrase.copyOf()
-        return try {
-            KeyFolder(folder).unlock(copy) is Unlock.Unlocked
-        } finally {
-            copy.fill(' ')
-        }
-    }
+    fun passphraseOpens(passphrase: CharArray): Boolean = passphraseOpens(folder, passphrase)
 
     /** Clears this core's copy of the passphrase; the backup calls refuse after it. */
     fun close() {
@@ -386,6 +379,19 @@ class MedicAllCore private constructor(
                     if (folder.list(FolderLayout.DEVICES).any { it != device }) Unlock.KeyFileNotArrived
                     else Unlock.Unlocked(keys.create(passphrase))
                 else -> u
+            }
+        }
+
+        /**
+         * True when [passphrase] opens [folder]'s key file now, with no core and no database (SPEC:R11: a forgotten
+         * PIN with a folder that stays shut). Reads only; the caller still owns, and clears, [passphrase].
+         */
+        fun passphraseOpens(folder: SyncFolder, passphrase: CharArray): Boolean {
+            val copy = passphrase.copyOf()
+            return try {
+                KeyFolder(folder).unlock(copy) is Unlock.Unlocked
+            } finally {
+                copy.fill(' ')
             }
         }
 

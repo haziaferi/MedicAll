@@ -41,6 +41,7 @@ class AndroidDevice internal constructor(context: Context, settings: SealedFile)
         registry,
         open = ::open,
         lock = AppLock(registry.lock(), SystemClock::elapsedRealtime, registry::saveLock),
+        syncFolderOf = ::syncFolder,
         setAside = { f ->
             databases.remove(f.id)?.close()
             setAsideDatabaseFiles(app.getDatabasePath(f.databaseName).path, System.currentTimeMillis())

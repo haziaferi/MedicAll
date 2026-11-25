@@ -6,6 +6,7 @@ import com.hazia.medicall.core.sync.Ids
 import com.hazia.medicall.data.MedicAllCore
 import com.hazia.medicall.data.Opened
 import com.hazia.medicall.data.ProfileInfo
+import com.hazia.medicall.data.sync.SyncFolder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -18,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * [open] builds a folder's core with its passphrase (on Android: its own vault, database and SAF folder). When it
  * does not return [Opened.Ready] it leaves nothing open and stores nothing; when the folder's database is already
- * open it builds the new core over it. [setAside] closes a folder's database and puts its file aside, never
+ * open it builds the new core over it. [syncFolderOf] reaches a folder's sync folder without opening it (a
+ * forgotten PIN checks a shut folder's key file through it). [setAside] closes a folder's database and puts its file aside, never
  * deleting it (SPEC:R10): [MedicAllCore.close] clears a core's passphrase but leaves the database to the shell.
  *
  * Joining, opening, opening again and leaving run one at a time. Call off the main thread.
@@ -27,6 +29,7 @@ class MedicAllDevice(
     private val registry: FolderRegistry,
     private val open: suspend (JoinedFolder, CharArray) -> Opened,
     val lock: AppLock,
+    private val syncFolderOf: (JoinedFolder) -> SyncFolder,
     private val setAside: suspend (JoinedFolder) -> Unit,
 ) {
     private val cores = ConcurrentHashMap<String, MedicAllCore>()
@@ -111,15 +114,20 @@ class MedicAllDevice(
     }
 
     /**
-     * A forgotten PIN (SPEC:R11): removed when [passphrase] opens any open folder. A wrong one counts as a wrong PIN,
-     * and during a wait it is not checked ([AppLock.removeForgottenPinIf]). A folder that cannot be read (its grant
-     * revoked) counts as not opened, so the others are still tried and the try is still counted. With no folder
-     * joined the device holds nothing the lock guards and no passphrase could be checked, so the PIN goes (outside
-     * a wait): otherwise a lock whose state did not read would close the app for good.
+     * A forgotten PIN (SPEC:R11): removed when [passphrase] opens any joined folder's key file, open or shut (a
+     * folder that did not open, as when the key store did not answer, is checked through [syncFolderOf]). A wrong
+     * one counts as a wrong PIN, and during a wait it is not checked ([AppLock.removeForgottenPinIf]). A folder that
+     * cannot be read (its grant revoked) counts as not opened, so the others are still tried and the try is still
+     * counted. With no folder joined the device holds nothing the lock guards and no passphrase could be checked, so
+     * the PIN goes (outside a wait): otherwise a lock whose state did not read would close the app for good.
      */
     fun removeForgottenPin(passphrase: CharArray): Verdict =
         lock.removeForgottenPinIf {
-            registry.folders().isEmpty() ||
-                cores.values.toList().any { core -> runCatching { core.passphraseOpens(passphrase) }.getOrDefault(false) }
+            val joined = registry.folders()
+            joined.isEmpty() || joined.any { f ->
+                runCatching {
+                    cores[f.id]?.passphraseOpens(passphrase) ?: MedicAllCore.passphraseOpens(syncFolderOf(f), passphrase)
+                }.getOrDefault(false)
+            }
         }
 }
