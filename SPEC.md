@@ -338,13 +338,13 @@ People who live with several conditions keep medicines, appointments, lab report
 | Forgotten PIN | removed by typing the passphrase of a sync folder the device joins |
 | Fingerprint | optional, through the system's strong biometric prompt |
 
-**Evidence:** The lock's state lives in a device file sealed by the key store, never in a sync folder or a backup, so a key store that loses its key turns the lock off together with everything else on the device; whoever rebuilds it needs the passphrase anyway. Not checked: provisional values; the owner has not confirmed the timeout or the wait times.
+**Evidence:** The lock's state lives in a device file sealed by the key store, never in a sync folder or a backup, so a key store that loses its key turns the lock off together with everything else on the device; whoever rebuilds it needs the passphrase anyway. A device file that is damaged reads the same way: the lock off, but the joined folders gone with it, so nothing opens until each folder's passphrase is typed again. A wait running when the phone restarts starts again in full, never ends early, since the lock's clock restarts with the phone (`AppLock`, 2026-11-25). Not checked: provisional values; the owner has not confirmed the timeout or the wait times.
 
 **Acceptance:** With the lock on, no profile's data is visible after the app returns from the background past its timeout; changing the PIN changes no file in the sync folder or the backup folder.
 
 **Not:** A PIN that encrypts the data: a 4–6 digit secret would be weak against someone who copies the sync folder or a backup.
 
-**Since:** 2026-11-24 · owner · agreed rewording
+**Since:** 2026-11-25 · owner · agreed rewording
 
 ### D-R12 · Network use
 
@@ -379,7 +379,7 @@ People who live with several conditions keep medicines, appointments, lab report
 | Field | Required | Note |
 |---|---|---|
 | name | yes | shown first in that profile's notifications (R74) |
-| birth date | no | a date, never an age |
+| birth date | no | a date, never an age, from 1900-01-01 to today |
 | kind | yes | person; pet is in the data model and not offered in version 1 |
 | modules | yes | each module is on or off per profile |
 
@@ -394,7 +394,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Acceptance:** Two profiles on one device keep separate records, and switching a module off for one leaves the other unchanged.
 
-**Since:** 2026-11-24 · owner · agreed rewording
+**Since:** 2026-11-25 · owner · agreed rewording
 
 ### D-R110 · Profiles per device and where reminders fire
 

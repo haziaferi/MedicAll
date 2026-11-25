@@ -146,3 +146,5 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-24 · R10 · changed · each sync folder's passphrase is entered once per device · owner
 - 2026-11-24 · R109 · renamed · "One passphrase for devices, sync and backups" → "One passphrase per sync folder" · owner
 - 2026-11-24 · R110 · changed · evidence: a profile of unknown origin has reminders off everywhere · owner
+- 2026-11-25 · R11 · changed · evidence: a damaged device file and a restart during a wait · owner
+- 2026-11-25 · R14 · changed · birth date from 1900-01-01 to today · owner

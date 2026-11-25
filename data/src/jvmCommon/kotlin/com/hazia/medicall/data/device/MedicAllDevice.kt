@@ -101,6 +101,22 @@ class MedicAllDevice(
         opened
     }
 
+    /**
+     * Runs [block] with the ids of the folders joined, while no join, open or leave runs, so a folder being joined
+     * (its vault stored, not remembered yet) is never taken for an orphan. For a shell's clean-up of what a crash
+     * or a lost settings file left behind.
+     */
+    suspend fun <T> withJoinedIds(block: suspend (Set<String>) -> T): T = changes.withLock {
+        block(registry.folders().map { it.id }.toSet())
+    }
+
+    /** Closes every open core, then runs [closeShell] (the shell's databases), while no join, open or leave runs. */
+    suspend fun closeAll(closeShell: suspend () -> Unit) = changes.withLock {
+        cores.values.forEach { it.close() }
+        cores.clear()
+        closeShell()
+    }
+
     /** Every profile of every open folder, with its folder, in the order the folders were joined, the bin's included. */
     suspend fun profiles(): List<Pair<JoinedFolder, ProfileInfo>> =
         registry.folders().flatMap { f -> cores[f.id]?.profiles()?.map { f to it }.orEmpty() }

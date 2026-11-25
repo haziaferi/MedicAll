@@ -24,5 +24,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Does nothing and closes. Started from adb to wake an instrumented run that OxygenOS's freezer stopped,
+             without the harness, whose start-up clean-up would treat the tests' folders as orphans. -->
+        <activity
+            android:name=".WakeActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
     </application>
 </manifest>
