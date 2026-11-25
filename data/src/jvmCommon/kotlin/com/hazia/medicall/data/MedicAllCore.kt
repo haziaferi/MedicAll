@@ -1,5 +1,7 @@
 package com.hazia.medicall.data
 
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import com.hazia.medicall.core.crypto.KeyFolder
 import com.hazia.medicall.core.crypto.LineCipher
 import com.hazia.medicall.core.crypto.Unlock
@@ -163,11 +165,19 @@ class MedicAllCore private constructor(
 
     /**
      * Sets [remindersHere] on this device alone; nothing goes to the sync folder or a backup. One statement per
-     * switch, so two switches set at once both hold.
+     * switch, so two switches set at once both hold. A profile that is not there (purged, say) throws an
+     * [IllegalArgumentException].
      */
-    suspend fun setRemindersHere(profileId: String, on: Boolean) {
-        profile(profileId)
-        onDevice.setReminders(profileId, on)
+    suspend fun setRemindersHere(profileId: String, on: Boolean) = onThisDevice(profileId) { onDevice.setReminders(profileId, on) }
+
+    /** Checks profile [profileId] is there and runs [write] in one transaction, so a purge cannot fall between them. */
+    private suspend fun onThisDevice(profileId: String, write: suspend () -> Unit) {
+        db.useWriterConnection { connection ->
+            connection.immediateTransaction {
+                profile(profileId)
+                write()
+            }
+        }
     }
 
     /** Whether profile [profileId] is shown on this device (SPEC:R110): as set here, on by default; never while in the bin. */
@@ -178,10 +188,7 @@ class MedicAllCore private constructor(
     }
 
     /** Sets [shownHere] on this device alone, as [setRemindersHere]. */
-    suspend fun setShownHere(profileId: String, on: Boolean) {
-        profile(profileId)
-        onDevice.setShown(profileId, on)
-    }
+    suspend fun setShownHere(profileId: String, on: Boolean) = onThisDevice(profileId) { onDevice.setShown(profileId, on) }
 
     private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
 

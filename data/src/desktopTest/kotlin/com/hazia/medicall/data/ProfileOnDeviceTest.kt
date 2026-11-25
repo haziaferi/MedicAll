@@ -165,6 +165,28 @@ class ProfileOnDeviceTest {
     }
 
     @Test
+    fun aSwitchSetAsItsProfileIsPurgedSaysNoProfile_SPEC_R110() = runBlocking {
+        val a = device("dev-a")
+        val ids = List(60) { a.addProfile("Profile $it") }
+        ids.forEach { a.remove(PROFILE, it) }
+        wall += 31 * DAY
+        val failures = java.util.Collections.synchronizedList(mutableListOf<Throwable>())
+        coroutineScope {
+            launch(Dispatchers.IO) { a.purgeExpired() }
+            for (id in ids) launch(Dispatchers.IO) {
+                try {
+                    a.setRemindersHere(id, true)
+                } catch (e: Exception) {
+                    failures += e
+                }
+            }
+        }
+        // Set before the purge (then purged with it) or refused after it: never a database error.
+        assertTrue(failures.all { it is IllegalArgumentException }, failures.map { it::class.simpleName to it.message }.distinct().toString())
+        assertEquals(emptyList(), opened.single().profileDeviceDao().all())
+    }
+
+    @Test
     fun aPurgedProfileTakesItsSwitches_SPEC_R97() = runBlocking {
         val a = device("dev-a")
         val id = a.addProfile("Profile A")
