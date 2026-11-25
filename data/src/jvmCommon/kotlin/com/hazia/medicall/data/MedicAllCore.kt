@@ -127,7 +127,8 @@ class MedicAllCore private constructor(
             val s = writes.clock.tick()
             writes.merger.created(store, Row(PROFILE, id, mapOf(
                 NAME to Group(s, mapOf("name" to name)),
-                DETAILS to Group(s, mapOf("birth_date" to birthDate, "kind" to kind)),
+                DETAILS to Group(s, mapOf("kind" to kind)),
+                BIRTH to Group(s, mapOf("birth_date" to birthDate)),
                 REMOVED to Group(s, mapOf("removed_at" to null)),
                 MODULES to Group(s, allModulesOn()),
                 ORIGIN to Group(s, mapOf("created_device" to device)),
@@ -137,13 +138,12 @@ class MedicAllCore private constructor(
     }
 
     /**
-     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Only the field
-     * changes: the kind is the one the row holds inside the write's transaction, so a peer's change of kind that an
-     * import brings in meanwhile is kept.
+     * Sets profile [id]'s birth date, or clears it with null; as [addProfile], a bad date throws. Its own group
+     * ([BIRTH]), so a change of kind on another device survives the merge (SPEC:R16).
      */
     suspend fun setBirthDate(id: String, birthDate: String?) {
         checkBirthDate(birthDate)
-        writes.edit(PROFILE, id, DETAILS) { mapOf("birth_date" to birthDate) }
+        writes.edit(PROFILE, id, BIRTH) { mapOf("birth_date" to birthDate) }
     }
 
     /** Switches [module] on or off for profile [id] alone (SPEC:R14): its modules group, apart from the others. */
@@ -200,7 +200,7 @@ class MedicAllCore private constructor(
     /** Renames profile [id]: its name group only, so a change of kind elsewhere survives the merge (SPEC:R16). */
     suspend fun rename(id: String, name: String) = writes.edit(PROFILE, id, NAME) { mapOf("name" to name) }
 
-    /** Sets profile [id]'s kind: its details group, apart from the name; the birth date is the one the row holds inside the write. */
+    /** Sets profile [id]'s kind: its details group, apart from the name and the birth date (SPEC:R16). */
     suspend fun changeKind(id: String, kind: String) = writes.edit(PROFILE, id, DETAILS) { mapOf("kind" to kind) }
 
     /** Every profile, the bin's included, by name then id. */

@@ -19,7 +19,12 @@ const val PROFILE = "profile"
  * device and a change of kind on another both survive the merge. Its removal is a group of its own.
  */
 internal const val NAME = "name"
+
+/** The kind. Lines written before schema 3 carry the birth date here too; [BIRTH] outranks it when later. */
 internal const val DETAILS = "details"
+
+/** The birth date, apart from the kind, so a birth date set on one device and a kind changed on another both hold. */
+internal const val BIRTH = "birth"
 internal const val REMOVED = "removed"
 
 /** The modules switched on or off, one Boolean per [Module.key] (SPEC:R14). */
@@ -71,6 +76,9 @@ internal data class ProfileEntity(
     @ColumnInfo(name = "created_device") val createdDevice: String? = null,
     @ColumnInfo(name = "origin_hlc", defaultValue = "0") val originHlc: Long = NEVER_WRITTEN.hlc,
     @ColumnInfo(name = "origin_device", defaultValue = "") val originDevice: String = NEVER_WRITTEN.device,
+    /** [birthDate]'s own stamp ([BIRTH]); schema 3 starts it at the details stamp. */
+    @ColumnInfo(name = "birth_hlc", defaultValue = "0") val birthHlc: Long = NEVER_WRITTEN.hlc,
+    @ColumnInfo(name = "birth_device", defaultValue = "") val birthDevice: String = NEVER_WRITTEN.device,
 ) {
     /** The modules switched on, in [Module]'s order. */
     val modules: Set<Module>
@@ -106,7 +114,8 @@ internal fun profileTable(dao: ProfileDao) =
 
 internal fun ProfileEntity.toRow() = Row(PROFILE, id, mapOf(
     NAME to Group(Stamp(nameHlc, nameDevice), mapOf("name" to name)),
-    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("birth_date" to birthDate, "kind" to kind)),
+    DETAILS to Group(Stamp(detailsHlc, detailsDevice), mapOf("kind" to kind)),
+    BIRTH to Group(Stamp(birthHlc, birthDevice), mapOf("birth_date" to birthDate)),
     REMOVED to Group(Stamp(removedHlc, removedDevice), mapOf("removed_at" to removedAt)),
     MODULES to Group(Stamp(modulesHlc, modulesDevice), mapOf(
         Module.MEDICINES.key to modulesMedicines,
@@ -122,11 +131,15 @@ internal fun allModulesOn(): Map<String, Any?> = Module.entries.associate { it.k
 
 /**
  * Throws when [this] is not a profile this version can read. A row without [MODULES] or [ORIGIN] (written
- * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN].
+ * before they existed) reads with every module on and no origin, stamped [NEVER_WRITTEN]. A [DETAILS] group
+ * that still carries the birth date (written before [BIRTH] existed) gives it, with its stamp, unless [BIRTH]
+ * is later.
  */
 internal fun Row.toProfileEntity(): ProfileEntity {
     val name = groups.getValue(NAME)
     val details = groups.getValue(DETAILS)
+    val birth = listOfNotNull(groups[BIRTH], details.takeIf { "birth_date" in it.values }).maxByOrNull { it.stamp }
+        ?: Group(NEVER_WRITTEN, mapOf("birth_date" to null))
     val removed = groups.getValue(REMOVED)
     val modules = groups[MODULES] ?: Group(NEVER_WRITTEN, allModulesOn())
     val origin = groups[ORIGIN] ?: Group(NEVER_WRITTEN, mapOf("created_device" to null))
@@ -136,7 +149,7 @@ internal fun Row.toProfileEntity(): ProfileEntity {
         name = name.values["name"] as String,
         nameHlc = name.stamp.hlc,
         nameDevice = name.stamp.device,
-        birthDate = details.values["birth_date"] as String?,
+        birthDate = birth.values["birth_date"] as String?,
         kind = details.values["kind"] as String,
         detailsHlc = details.stamp.hlc,
         detailsDevice = details.stamp.device,
@@ -152,5 +165,7 @@ internal fun Row.toProfileEntity(): ProfileEntity {
         createdDevice = origin.values["created_device"] as String?,
         originHlc = origin.stamp.hlc,
         originDevice = origin.stamp.device,
+        birthHlc = birth.stamp.hlc,
+        birthDevice = birth.stamp.device,
     )
 }
