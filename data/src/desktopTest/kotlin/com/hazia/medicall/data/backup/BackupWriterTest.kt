@@ -81,6 +81,9 @@ class BackupWriterTest {
 
         fun lines(name: String) = SevenZip.read(archive, password, name)!!.decodeToString().split("\r\n").filter { it.isNotEmpty() }
         assertEquals(2 + 1, lines("records/profile.csv").size)
+        // One column per field: the copy of the birth date in the details group is not a second column.
+        val header = lines("records/profile.csv").first().split(',')
+        assertEquals(header.size, header.toSet().size, header.toString())
         assertEquals(3 + 1, lines("records/blob_ref.csv").size)
         assertTrue(lines("records/profile.csv").any { "Profile B" in it })
 

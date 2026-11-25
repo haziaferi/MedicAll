@@ -107,12 +107,16 @@ internal class BackupContent private constructor(
             return ArchiveEntry(name, bytes.size.toLong()) { ByteArrayInputStream(bytes) }
         }
 
-        /** A header of `id` and every field in group order, then each row's values; stamps are left to `records.json`. */
+        /**
+         * A header of `id` and every field in group order, then each row's values; stamps are left to `records.json`.
+         * A field in two groups (a profile's birth date, copied into its details for older builds) is one column,
+         * with the value of the last group that has it.
+         */
         private fun csv(rows: List<Row>): String {
-            val columns = LinkedHashSet<Pair<String, String>>()
-            for (row in rows) for ((g, group) in row.groups) for (f in group.values.keys) columns += g to f
-            val header = listOf("id") + columns.map { it.second }
-            return Csv.write(listOf(header) + rows.map { row -> listOf(row.id) + columns.map { (g, f) -> row.groups[g]?.values?.get(f)?.toString().orEmpty() } })
+            val groupOf = LinkedHashMap<String, String>()
+            for (row in rows) for ((g, group) in row.groups) for (f in group.values.keys) groupOf[f] = g
+            val header = listOf("id") + groupOf.keys
+            return Csv.write(listOf(header) + rows.map { row -> listOf(row.id) + groupOf.map { (f, g) -> row.groups[g]?.values?.get(f)?.toString().orEmpty() } })
         }
 
         /**
