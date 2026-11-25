@@ -108,6 +108,13 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 | D-R91 | Bundles | 15. Period and bundles |
 | Q-R92 | Condition bundle names | 15. Period and bundles |
 | D-R93 | Visual identity | 16. Visual design |
+| D-R114 | Palettes | 16. Visual design |
+| D-R115 | Type | 16. Visual design |
+| D-R116 | Shape, space and the band | 16. Visual design |
+| D-R117 | Icons | 16. Visual design |
+| D-R118 | Launcher icon | 16. Visual design |
+| D-R119 | Lock screen look | 16. Visual design |
+| D-R120 | Week strip | 16. Visual design |
 | D-R94 | Today screen | 16. Visual design |
 | D-R95 | Frontend decisions are the owner's | 16. Visual design |
 | D-R96 | A dose confirmed on two devices | 17. Edge cases |
@@ -151,6 +158,9 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 | Emergency card | The lock-screen card for a paramedic or emergency doctor. |
 | Wallet card | The optional printed card with fuller information. |
 | Device log | One device's own append-only sync file in the shared folder. |
+| Palette | One of the four colour sets a profile can show, each with a light and a dark rendering (R114). |
+| Band | The strip at the top of a main screen in the palette's main colour, edged by the accent's double rule (R116). |
+| Blister strip | The week of doses drawn as rows of pill-shaped pockets, one per dose (R120). |
 
 ## 1. Purpose and jobs
 
@@ -1476,13 +1486,132 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R93 · Visual identity
 
-**Rule:** MedicAll's visual identity is its own, decided after the codebase exists and before the first screen is built, with the visual-craft skill leading the process.
+**Rule:** MedicAll's visual identity is Albarello, taken from the Italian maiolica pharmacy jar: tin-glaze grounds, a cobalt band edged by a saffron double rule, Fraunces for titles and Atkinson Hyperlegible Next for everything else. R114 to R120 fix its parts, and a screen departs from them only by an owner ruling recorded here.
 
-**Acceptance:** none: a process rule; no screen work starts before the identity is recorded in this spec.
+**Why:** The owner chose it over three other directions (Capsule, Record card, Drawing wall), scored on four axes the owner set: calm, distinctive, legible at a glance and trustworthy. It is MedicAll's own and calm without being sterile.
 
-**Not:** Reusing the palette or design of another of the owner's apps.
+**Evidence:** The options, renders and measurements are in `docs/decisions/2026-11-25-visual-identity.md`, and the agreed mock-up is `docs/design/identity.png`. The visual-craft skill led the process; palettes were fitted and audited with color-optimization-core, and drawings were checked with the svg-illustration loop (owner, 2026-11-25).
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Acceptance:** Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115 and R116.
+
+**Not:** Reusing the palette or design of another of the owner's apps; a stock Material look.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R114 · Palettes
+
+**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced; a new profile starts on Albarello, and each palette has a light and a dark rendering. The band and primary buttons take the main colour, the double rule takes the accent, which is ornament only and never carries text, and a taken dose takes the taken colour. Light or dark follows the system unless the person sets it in the app.
+
+**Why:** A carer tells profiles apart at a glance by their colours (R14), and an adult who wants a more colourful app has one without a childish look. Each palette's taken colour was derived from that palette's own harmony, not picked by eye on one screen (owner, 2026-11-25).
+
+**Values:**
+
+| Palette | Mode | Ground | Card | Text | Muted text | Main | On main | Accent | Taken | Line |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Albarello | light | #F5F4F0 | #FCFBF8 | #1B2A4A | #455272 | #2747A0 | #FFFFFF | #BF8103 | #2F7D6B | #DCD8CC |
+| Albarello | dark | #121827 | #1A2236 | #E6E9F0 | #B4BCD0 | #94ABF2 | #121827 | #E2B04A | #6FC0AA | #2C3650 |
+| Plum & olive | light | #F1EEEA | #FBF9F6 | #2A1D2B | #5A4B5A | #6B3463 | #FFFFFF | #4F6FA8 | #8A8530 | #DDD5CF |
+| Plum & olive | dark | #1A1519 | #241D23 | #EDE6EC | #C2B5C0 | #D49BC8 | #1A1519 | #9DB4E0 | #C9C46A | #3A3039 |
+| Capsule | light | #EEF1F3 | #FFFFFF | #172026 | #45525A | #0E5A6B | #FFFFFF | #E0A383 | #D9547C | #D5DBDF |
+| Capsule | dark | #10171B | #18232A | #DDE4E7 | #AEBBC2 | #5DB8CB | #10171B | #E8B597 | #E8638D | #2A3740 |
+| Murano | light | #F7F3F4 | #FFFFFF | #22262A | #4C5359 | #0B5E48 | #FFFFFF | #D2558F | #3A5BA4 | #E4DCDE |
+| Murano | dark | #0F1A17 | #172521 | #E0E6E2 | #B5C2BC | #5CC4A2 | #0F1A17 | #EE8DB8 | #6B90DE | #26372F |
+
+| Floor | Value |
+|---|---|
+| Text and muted text on ground and card | at least 7:1 |
+| On-main label on the main colour | at least 7:1 |
+| Taken colour against the card | at least 3:1 in light, at least 5:1 in dark |
+| Dark-mode body text against its ground | under 15:1 |
+| Taken colour against main and accent, deutan and protan | at least 10 ΔE2000 |
+| Dark grounds | near-black, never #000000 |
+| Red | in no palette |
+
+**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass the phone checks for OLED smear and halation. Not checked: a switch's off track drawn in the line colour is under 3:1 against the card, so switches need a track token of their own when they are built.
+
+**Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R115 · Type
+
+**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next, with tabular figures wherever a time, dose or count appears. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
+
+**Why:** Atkinson Hyperlegible was drawn for low-vision readers and tells similar letters and digits apart, which suits doses read when tired; a 1.25 ratio keeps headings calm on a phone.
+
+**Values:**
+
+| Role | Face | Size / line height (sp) | Weight | Used for |
+|---|---|---|---|---|
+| Display | Fraunces | 33 / 40 | 500 | the lock-screen wordmark, rare large headings |
+| Title | Fraunces | 26 / 32 | 500 | band titles, medicine names |
+| Heading | Fraunces | 21 / 28 | 500 | section headings |
+| Body | Atkinson Hyperlegible Next | 17 / 26 | 400 | running text, list rows |
+| Label | Atkinson Hyperlegible Next | 15 / 20 | 500 | field labels, small headings above values |
+| Caption | Atkinson Hyperlegible Next | 14 / 20 | 400 | secondary lines |
+| Button | Atkinson Hyperlegible Next | 17 / 24 | 600 | buttons |
+
+**Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built.
+
+**Acceptance:** At 200% system font size and 320 dp width no text on a phase 2b screen is cut or overlaps, and the times in a dose list line up in a column.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R116 · Shape, space and the band
+
+**Rule:** Corners are 10 dp except on pills and switches, spacing follows a 4 dp grid with 20 dp screen margins and 16 dp card padding, and primary actions have 48 dp targets. Every main screen opens with the band: the main colour edged above and below by the accent's double rule, carrying the screen's title. When the device shows two or more profiles, the open profile's name takes the band's large line and the screen's title moves to its small line.
+
+**Why:** The band is the identity's signature, the painted band of the jar; most phones hold one profile (R14), so it carries the screen there, and a carer can never miss whose record is open.
+
+**Acceptance:** With one profile the band reads the screen's title; after a second profile is added, every band leads with the open profile's name.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R117 · Icons
+
+**Rule:** Generic controls use Phosphor's regular icons, and MedicAll's own objects use the custom set in `docs/design/icons`, drawn on the same 24 dp grid with a 1.5 dp stroke: medicine (a plain jar), dose taken, skipped and missed, tablet, capsule, drops, injection, skin patch and reference range. A status is told by shape and word, never by colour alone.
+
+**Why:** No stock set draws dose states or medicine forms well, and Phosphor's pill would mean the same as the custom capsule, so medicine takes the jar (owner, 2026-11-25).
+
+**Evidence:** Each custom icon passes craftkit's checks at 24 dp. At 24 dp, taken, missed, tablet and injection read at once; skipped needs its word beside it, and the patch and reference range depend on context. Not checked: on a device at real pixel densities.
+
+**Acceptance:** No icon from another set appears in the app, and the three dose states are told apart in greyscale.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R118 · Launcher icon
+
+**Rule:** The launcher icon is the owner's clipboard drawing in `docs/design/launcher.svg`, with its Affinity source beside it: a cobalt tile as the board, a tin sheet with a cobalt cross and short lines, a saffron clip, an alarm clock and a two-tone capsule, outlined in ink at 2 dp. Everything in it sits inside the adaptive icon's 66 dp safe circle.
+
+**Why:** The owner wanted objects that read as all of a person's medical life in one place, legible at small sizes.
+
+**Evidence:** Measured on 2026-11-25: centred at (54, 53) on the 108 dp canvas with a 1 dp optical lift, furthest ink 32.8 dp from the centre. At 48 px every object reads; at 24 px the clock, capsule and cross read. Saffron on cobalt is 2.55:1 by lightness; the ink outline and the hue difference carry it.
+
+**Acceptance:** The Android build's adaptive icon matches `docs/design/launcher.svg`, and no mask on the phones of R09 clips any part of it.
+
+**Not:** 3 dp and 4.5 dp outlines: at 4.5 dp the outline swallows the cross.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R119 · Lock screen look
+
+**Rule:** The lock screen shows the wordmark, a PIN field that opens the phone's own number keyboard (on Windows, the physical keyboard), a "Use fingerprint" button when fingerprint is on, and a "Forgot your PIN?" link; it has no keypad of its own. A wrong PIN is shown in words with an information icon, and a wait shows a countdown ring in the accent with the keyboard closed; no red is used.
+
+**Why:** The system keyboard is the one the person knows and already fits their accessibility settings (owner, 2026-11-25).
+
+**Acceptance:** On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
+
+**Since:** 2026-11-25 · owner · agreed rewording
+
+### D-R120 · Week strip
+
+**Rule:** A week of doses is shown as a blister strip: one row per dose time, one column per day, and today underlined in the accent. A taken dose is a solid pill in the taken colour, not yet is an outline, skipped is struck through and missed is dashed, with a legend beside the strip.
+
+**Why:** It borrows the blister pack, an object the person handles every day, and tells each state by shape (owner, 2026-11-25).
+
+**Acceptance:** In greyscale the four states are told apart.
+
+**Since:** 2026-11-25 · owner · agreed rewording
 
 ### D-R94 · Today screen
 
@@ -1662,6 +1791,14 @@ People who live with several conditions keep medicines, appointments, lab report
 - R89 · Hormonal contraception switch: Adding a contraceptive raises the suggestion; a change in logged flow alone never does.
 - R90 · Pregnancy and fertility bundle: With the bundle off, no pregnancy or ovulation item appears; logging a pregnancy pauses period predictions.
 - R91 · Bundles: Turning a bundle on switches on its contents for that profile only, and turning it off hides them without deleting entries.
+- R93 · Visual identity: Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115 and R116.
+- R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello.
+- R115 · Type: At 200% system font size and 320 dp width no text on a phase 2b screen is cut or overlaps, and the times in a dose list line up in a column.
+- R116 · Shape, space and the band: With one profile the band reads the screen's title; after a second profile is added, every band leads with the open profile's name.
+- R117 · Icons: No icon from another set appears in the app, and the three dose states are told apart in greyscale.
+- R118 · Launcher icon: The Android build's adaptive icon matches `docs/design/launcher.svg`, and no mask on the phones of R09 clips any part of it.
+- R119 · Lock screen look: On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
+- R120 · Week strip: In greyscale the four states are told apart.
 - R96 · A dose confirmed on two devices: After the sync, the dose shows one confirmation and the stock falls once.
 - R97 · A profile removed: A removed and restored profile has the same record count as before.
 - R98 · Time zones and daylight saving: Emivita's daylight-saving scheduler tests pass in the port.

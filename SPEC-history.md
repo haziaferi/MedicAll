@@ -149,3 +149,11 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-25 · R11 · changed · evidence: a damaged device file and a restart during a wait · owner
 - 2026-11-25 · R14 · changed · birth date from 1900-01-01 to today · owner
 - 2026-11-25 · R110 · changed · evidence: a profile in the bin fires no reminder and is not shown · owner
+- 2026-11-25 · R93 · changed · the identity is Albarello, its parts fixed by R114 to R120 · owner
+- 2026-11-25 · R114 · added · palettes · owner
+- 2026-11-25 · R115 · added · type · owner
+- 2026-11-25 · R116 · added · shape, space and the band · owner
+- 2026-11-25 · R117 · added · icons · owner
+- 2026-11-25 · R118 · added · launcher icon · owner
+- 2026-11-25 · R119 · added · lock screen look · owner
+- 2026-11-25 · R120 · added · week strip · owner

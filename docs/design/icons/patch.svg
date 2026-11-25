@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img">
+  <title>Skin patch</title>
+  <g id="subject" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14.5 3.25H5.75A2.5 2.5 0 0 0 3.25 5.75V18.25A2.5 2.5 0 0 0 5.75 20.75H18.25A2.5 2.5 0 0 0 20.75 18.25V9.5"/>
+  <path d="M14.5 3.25L20.75 9.5C17 9.5 14.5 7 14.5 3.25Z"/>
+  <circle cx="11" cy="13" r="3.75"/>
+  </g>
+</svg>
