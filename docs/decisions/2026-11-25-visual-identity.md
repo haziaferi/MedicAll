@@ -49,7 +49,11 @@ Palettes from the owner's other apps were ruled out first, so none of the direct
 
 Fraunces 500 for titles, Atkinson Hyperlegible Next for everything else. The type search proposed a
 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25 from a 17 sp body (R115).
-Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures.
+Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures. Fraunces has
+proportional figures only; building the Compose theme found R115 asking for tabular figures in it too
+(the time picker's digits, a date picker headline, a strength in a medicine name), and on 2026-11-26 the
+owner kept tabular figures to times, doses and counts that stack in a column or change in place, always
+in an Atkinson role, leaving a Fraunces role's figures proportional.
 
 ## 4. Gaps closed before merging (2026-11-26)
 

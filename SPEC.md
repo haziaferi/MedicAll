@@ -1538,7 +1538,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R115 · Type
 
-**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next, with tabular figures wherever a time, dose or count appears. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
+**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next; times, doses and counts that stack in a column or change in place are set in an Atkinson role with tabular figures, and a Fraunces role's figures stay proportional. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
 
 **Why:** Atkinson Hyperlegible was drawn for low-vision readers and tells similar letters and digits apart, which suits doses read when tired; a 1.25 ratio keeps headings calm on a phone.
 
@@ -1569,7 +1569,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | labelMedium | Label | navigation bar labels |
 | labelSmall | Caption | badges |
 
-**Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built. The Material 3 mapping is set in the faces on `docs/design/system-and-type.png`; it uses no size outside the seven roles, so a heading still outranks its content inside every component (owner, 2026-11-26).
+**Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. Fraunces has proportional figures only, with no `tnum`, while the mapping below draws the time picker's digits and the date picker's headline in it; each picker digit sits in its own box and a headline date or a strength in a name lines up with nothing, so the owner kept tabular figures to figures that align (owner, 2026-11-26). The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built. The Material 3 mapping is set in the faces on `docs/design/system-and-type.png`; it uses no size outside the seven roles, so a heading still outranks its content inside every component (owner, 2026-11-26).
 
 **Acceptance:** On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column; the Compose theme sets all fifteen Material 3 type roles from the mapping, and no text is drawn in Roboto.
 

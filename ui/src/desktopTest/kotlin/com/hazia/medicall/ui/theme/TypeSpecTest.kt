@@ -107,8 +107,10 @@ class TypeSpecTest {
         assertTrue(atkinson.contains("Version 2.001".toByteArray(Charsets.UTF_16BE)), "Atkinson Hyperlegible Next 2.001")
         assertTrue(atkinson.contains("Atkinson Hyperlegible Next".toByteArray(Charsets.UTF_16BE)))
         assertTrue(atkinson.contains("tnum".toByteArray()) && atkinson.contains("wght".toByteArray()))
-        // Fraunces with its optical size and weight axes, which the theme sets.
+        // Fraunces with its optical size and weight axes, which the theme sets, and no tabular figures, which is why
+        // R115 keeps tabular figures to Atkinson roles. A Fraunces that gains them fails here, for the owner to see.
         assertTrue(fraunces.contains("Fraunces".toByteArray(Charsets.UTF_16BE)))
+        assertTrue(!fraunces.contains("tnum".toByteArray()), "Fraunces has no tnum (R115's evidence)")
         assertTrue(fraunces.contains("opsz".toByteArray()) && fraunces.contains("wght".toByteArray()))
         assertEquals(setOf("atkinson_hyperlegible_next_variable.ttf", "fraunces_variable.ttf"), fonts.list()!!.toSet())
     }
