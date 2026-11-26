@@ -87,6 +87,13 @@ class ColoursSpecTest {
         listOf("onSurface, onSurfaceVariant, surfaceVariant", "text, muted text, ground"),
         listOf("primaryContainer, secondaryContainer, tertiaryContainer", "the three containers"),
         listOf("onPrimaryContainer, onSecondaryContainer, onTertiaryContainer", "text"),
+        listOf("primaryFixed, primaryFixedDim", "primary container"),
+        listOf("secondaryFixed, secondaryFixedDim", "secondary container"),
+        listOf("tertiaryFixed, tertiaryFixedDim", "tertiary container"),
+        listOf(
+            "onPrimaryFixed, onPrimaryFixedVariant, onSecondaryFixed, onSecondaryFixedVariant, onTertiaryFixed, onTertiaryFixedVariant",
+            "text",
+        ),
         listOf("inverseSurface, inverseOnSurface, inversePrimary", "text, card, the other mode's link"),
         listOf("outline, outlineVariant", "muted text, line"),
         listOf("error, onError, errorContainer, onErrorContainer", "error, card, card, error"),
@@ -98,7 +105,7 @@ class ColoursSpecTest {
         assertEquals(roleTable, Spec.table("R122", listOf("Material 3 role", "Takes")))
     }
 
-    /** Every Material 3 colour role and what it takes, as [roleTable] says; then the fixed roles the table does not name. */
+    /** Every Material 3 colour role and what it takes, as [roleTable] says. */
     private fun expectedRoles(c: MedicAllColours, otherModeLink: Color, onAccent: Color): Map<String, Color> = mapOf(
         "primary" to c.main, "onPrimary" to c.onMain,
         "secondary" to c.link, "onSecondary" to c.card,
@@ -115,7 +122,6 @@ class ColoursSpecTest {
         "outline" to c.mutedText, "outlineVariant" to c.line,
         "error" to c.error, "onError" to c.card, "errorContainer" to c.card, "onErrorContainer" to c.error,
         "scrim" to c.text,
-        // Not in R122's table: Material 3 1.9's fixed roles follow its container rule (see colorSchemeOf).
         "primaryFixed" to c.primaryContainer, "primaryFixedDim" to c.primaryContainer,
         "onPrimaryFixed" to c.text, "onPrimaryFixedVariant" to c.text,
         "secondaryFixed" to c.secondaryContainer, "secondaryFixedDim" to c.secondaryContainer,

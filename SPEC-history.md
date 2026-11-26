@@ -181,3 +181,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R117 · changed · the selected navigation item takes the filled form of its icon · owner
 - 2026-11-26 · R115 · changed · tabular figures where figures align, in Atkinson roles; Fraunces figures stay proportional · owner
 - 2026-11-26 · R122 · changed · text colour on the three containers; the error container is the card, with error text · owner
+- 2026-11-26 · R122 · changed · Material 3 fixed roles take the containers and the text colour · owner

@@ -10,9 +10,8 @@ import com.hazia.medicall.core.look.Palette
  * Compose draws none in Material's own purple and red. Dynamic colour is never used: the palette is the person's
  * choice (SPEC:R114).
  *
- * Material 3 1.9 also has twelve "fixed" roles, used by its expressive components, which R122's table does not name.
- * They follow R122's container rule: each fixed fill is its container, and the text on it is the text colour, as on
- * each of the three containers.
+ * Material 3 1.9's twelve "fixed" roles, used by its expressive components, take R122's containers too: each fixed
+ * fill is its container, and the text on it is the text colour.
  */
 fun colorSchemeOf(palette: Palette, dark: Boolean): ColorScheme {
     val c = coloursOf(palette, dark)
