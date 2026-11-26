@@ -175,3 +175,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R117 · changed · icons take the colour of the text beside them · owner
 - 2026-11-26 · R118 · changed · owner's redrawn icon: #3C5DB9 tile, green cross, red and cyan capsule, 1.5 dp outlines; splash on #3C5DB9 · owner
 - 2026-11-26 · R122 · changed · three containers and a disabled fill per palette and mode; inversePrimary and onTertiary corrected · owner
+- 2026-11-26 · R116 · changed · no double rule above the band now that it runs under the status bar · owner
