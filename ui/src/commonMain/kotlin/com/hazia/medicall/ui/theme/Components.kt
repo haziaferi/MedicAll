@@ -84,8 +84,8 @@ object MedicAllComponents {
 
     /**
      * A navigation item (SPEC:R117, SPEC:R122): selected, on the primary container in the text colour, its label in
-     * [MedicAllType.navigationLabel]; unselected, in the muted text colour. R122's filled icon for the selected item
-     * waits on an owner ruling, since R117 allows only Phosphor's regular icons.
+     * [MedicAllType.navigationLabel] and its icon filled (SPEC:R117: Phosphor's fill weight, or a custom icon's filled
+     * twin, added with phase 2b's navigation destinations); unselected, in the muted text colour.
      */
     @Composable
     fun navigationItemColours(): NavigationBarItemColors = MedicAllTheme.colours.let { c ->

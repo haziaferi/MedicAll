@@ -235,6 +235,10 @@ private fun Components() {
                     colors = MedicAllComponents.navigationItemColours())
             }
         }
+        Text(
+            "The selected item's icon is filled (R117); fill icons arrive with phase 2b's destinations.",
+            style = MedicAllTheme.type.caption, color = c.mutedText,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(Space.steps(10), Space.steps(5)).background(c.taken, PillShape))
             Text("taken", style = MedicAllTheme.type.caption, color = c.mutedText)

@@ -1601,13 +1601,13 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 
 ### D-R117 · Icons
 
-**Rule:** Generic controls use Phosphor's regular icons, and MedicAll's own objects use the custom set in `docs/design/icons`, drawn on the same 24 dp grid with a 1.5 dp stroke: medicine (a plain jar), dose taken, skipped and missed, tablet, capsule, drops, injection, skin patch and reference range. A status is told by shape and word, never by colour alone. An icon takes the colour of the text beside it: the on-main colour on the band, the muted text colour beside muted text and in an unselected navigation item, and the disabled colour when disabled; an icon alone takes the text colour, the taken icon the taken colour, and the information icon beside an error the error colour (R122).
+**Rule:** Generic controls use Phosphor's regular icons, and MedicAll's own objects use the custom set in `docs/design/icons`, drawn on the same 24 dp grid with a 1.5 dp stroke: medicine (a plain jar), dose taken, skipped and missed, tablet, capsule, drops, injection, skin patch and reference range; the selected navigation item takes the filled form of its icon (R122), Phosphor's fill weight or a custom icon's filled twin on the same grid. A status is told by shape and word, never by colour alone. An icon takes the colour of the text beside it: the on-main colour on the band, the muted text colour beside muted text and in an unselected navigation item, and the disabled colour when disabled; an icon alone takes the text colour, the taken icon the taken colour, and the information icon beside an error the error colour (R122).
 
 **Why:** No stock set draws dose states or medicine forms well, and Phosphor's pill would mean the same as the custom capsule, so medicine takes the jar (owner, 2026-11-25).
 
-**Evidence:** Each custom icon passes craftkit's checks at 24 dp. At 24 dp, taken, missed, tablet and injection read at once; skipped needs its word beside it, and the patch and reference range depend on context. Not checked: on a device at real pixel densities.
+**Evidence:** Each custom icon passes craftkit's checks at 24 dp. At 24 dp, taken, missed, tablet and injection read at once; skipped needs its word beside it, and the patch and reference range depend on context. In greyscale the selected navigation item's container shows at only 1.20 to 1.55:1 against the card, so its filled icon is its main non-colour mark, beside the label at weight 600 (owner, 2026-11-26). Not checked: on a device at real pixel densities.
 
-**Acceptance:** No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons.
+**Acceptance:** No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons; in greyscale the selected navigation item is told from the others by its filled icon.
 
 **Since:** 2026-11-26 · owner · agreed rewording
 
@@ -1942,7 +1942,7 @@ Text on every container takes the text colour.
 - R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 - R115 · Type: On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column; the Compose theme sets all fifteen Material 3 type roles from the mapping, and no text is drawn in Roboto.
 - R116 · Shape, space and the band: With one shown profile the band reads the screen's title; once a second shown profile exists, every band leads with the open profile's name, except on the profile list and device settings; no main screen has a wordmark row; on the phones of R09 the status bar icons read against the band in light and dark.
-- R117 · Icons: No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons.
+- R117 · Icons: No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons; in greyscale the selected navigation item is told from the others by its filled icon.
 - R118 · Launcher icon: The Android build's adaptive icon matches `docs/design/launcher.svg`, with `launcher-foreground.svg` as its foreground; no mask on the phones of R09 clips any part of it; the splash screen shows the foreground on #3C5DB9 in light and dark.
 - R119 · Lock screen look: On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
 - R120 · Week strip: In greyscale the four states and today are told apart.

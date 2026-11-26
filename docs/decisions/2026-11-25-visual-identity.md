@@ -118,6 +118,11 @@ A third read, of what Compose and Android draw on their own, found more; the own
   band (hue 345 to 45) Capsule's taken colour (3 to 5) and Murano's accent (352 to 354) were red. The
   owner defined red as R122's error band, OKLCh hue 15 to 40 at chroma above 0.04: only the eight error
   colours sit there, so the rose and pink stay, and R121 keeps its wider band for scale colours.
+- **The selected navigation icon (R117, R122).** R122 asked for a filled icon on the selected item while
+  R117 allowed only Phosphor's regular weight. In greyscale the selected container shows at only 1.20 to
+  1.55:1 on the card, so the filled icon carries the selection. The owner allowed Phosphor's fill weight,
+  and filled twins of custom icons, for the selected navigation item only; they are added once phase 2b
+  settles the navigation destinations (R95).
 
 ## 5. Not checked, and left for the phase that builds each screen
 
