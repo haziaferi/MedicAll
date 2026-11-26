@@ -53,9 +53,9 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState, 
         /**
          * [bytes] as [encode] wrote them, and whether every part read ([Decoded.whole]). No file is a first run
          * ([EMPTY]). Otherwise each part reads on its own: a folder entry that does not read is left out and the others
-         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off. A file without a look
-         * (written before there was one) reads whole with [DeviceLook.DEFAULT]; a look that does not read is
-         * [DeviceLook.DEFAULT] too, and the file is not whole.
+         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off. The look's light/dark
+         * setting and palette each read on their own: missing (a file from before the look) or not read, each is
+         * [DeviceLook.DEFAULT]'s, and the file is still whole.
          */
         fun decode(bytes: ByteArray?): Decoded {
             if (bytes == null) return Decoded(EMPTY, whole = true)
@@ -76,13 +76,14 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState, 
             val lockBytes = runCatching { (o.getValue("lock") as JsonObject).toString().encodeToByteArray() }.getOrNull()
             val lock = lockBytes?.let(LockState::decode) ?: LockState.UNREADABLE
             if (lock == LockState.UNREADABLE) whole = false
-            val look = if ("look" !in o) DeviceLook.DEFAULT else runCatching {
-                val l = o.getValue("look").jsonObject
-                DeviceLook(
-                    LightDark.byId(l.getValue("lightDark").jsonPrimitive.content)!!,
-                    Palette.byId(l.getValue("palette").jsonPrimitive.content)!!,
-                )
-            }.getOrNull() ?: DeviceLook.DEFAULT.also { whole = false }
+            // The look is only how the app looks: a part that does not read (a palette a later version added, say)
+            // is its default and leaves the file whole, so it is never set aside over a colour.
+            val l = runCatching { o.getValue("look").jsonObject }.getOrNull()
+            fun lookPart(key: String) = runCatching { l?.getValue(key)?.jsonPrimitive?.content }.getOrNull()
+            val look = DeviceLook(
+                lookPart("lightDark")?.let(LightDark::byId) ?: DeviceLook.DEFAULT.lightDark,
+                lookPart("palette")?.let(Palette::byId) ?: DeviceLook.DEFAULT.palette,
+            )
             return Decoded(DeviceSettings(folders, lock, look), whole)
         }
     }

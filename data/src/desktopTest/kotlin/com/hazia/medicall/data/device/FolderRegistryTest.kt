@@ -147,17 +147,27 @@ class FolderRegistryTest {
     }
 
     @Test
-    fun aLookThatDoesNotReadIsTheDefaultAndKeepsTheRest_SPEC_R114() {
+    fun aLookThatDoesNotReadIsTheDefaultAndNeverSetsTheFileAside_SPEC_R114() {
         val file = MemorySealedFile()
         val registry = FolderRegistry(file)
         val folder = registry.add("Folder A", "content://tree/folder-a")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
         registry.saveLook(DeviceLook(LightDark.DARK, Palette.MURANO))
         val original = file.bytes!!.decodeToString()
-        file.bytes = original.replace(""""palette":"murano"""", """"palette":"no-such-palette"""").encodeToByteArray()
-
-        val again = FolderRegistry(file)
-        assertEquals(DeviceLook.DEFAULT, again.look())
-        assertEquals(listOf(folder), again.folders())
-        assertEquals(1, file.keptAside.size)
+        // A palette this version does not know, as a later version may write; then a look that is not an object.
+        val cases = listOf(
+            original.replace(""""palette":"murano"""", """"palette":"no-such-palette"""") to DeviceLook(LightDark.DARK, Palette.DEFAULT),
+            original.replace(Regex(""""look":\{[^}]*\}"""), """"look":7""") to DeviceLook.DEFAULT,
+        )
+        for ((raw, expected) in cases) {
+            file.bytes = raw.encodeToByteArray()
+            assertEquals(expected, FolderRegistry(file).look())
+            // The file stays where it is, so the next start still has the folder and the lock, not a first run.
+            val next = FolderRegistry(file)
+            assertEquals(listOf(folder), next.folders())
+            assertEquals(lock, next.lock())
+        }
+        assertTrue(file.keptAside.isEmpty())
     }
 }

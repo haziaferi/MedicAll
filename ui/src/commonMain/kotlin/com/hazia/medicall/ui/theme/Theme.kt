@@ -11,7 +11,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import com.hazia.medicall.core.look.LightDark
 import com.hazia.medicall.core.look.Palette
 
-private val LocalMedicAllColours = staticCompositionLocalOf { coloursOf(Palette.DEFAULT, dark = false) }
+internal val LocalMedicAllColours = staticCompositionLocalOf { coloursOf(Palette.DEFAULT, dark = false) }
 private val LocalMedicAllType = staticCompositionLocalOf<MedicAllType> { error("MedicAllTheme is not set") }
 
 /**

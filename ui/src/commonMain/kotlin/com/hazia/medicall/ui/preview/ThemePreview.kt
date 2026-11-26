@@ -37,9 +37,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.hazia.medicall.core.look.Palette
+import com.hazia.medicall.ui.theme.FocusRingTarget
 import com.hazia.medicall.ui.theme.MedicAllColours
 import com.hazia.medicall.ui.theme.MedicAllComponents
 import com.hazia.medicall.ui.theme.MedicAllIcons
@@ -74,9 +77,12 @@ fun ThemePreview() {
     }
 }
 
-/** One palette in one mode: the band, every colour, the scales, the type, components and icons. */
+/**
+ * One palette in one mode: the band, every colour, the scales, the type, components and icons. With [focusSave] the
+ * Save button takes focus, so a render shows its focus ring (SPEC:R122).
+ */
 @Composable
-fun PaletteSample(palette: Palette, dark: Boolean) {
+fun PaletteSample(palette: Palette, dark: Boolean, focusSave: Boolean = false) {
     MedicAllTheme(palette, dark) {
         val c = MedicAllTheme.colours
         Column(Modifier.fillMaxWidth().background(c.ground)) {
@@ -88,7 +94,7 @@ fun PaletteSample(palette: Palette, dark: Boolean) {
                 Section("Colours") { Swatches(c) }
                 Section("Scale colours, 35% to full") { Scales(c) }
                 Section("Type") { TypeSamples() }
-                Section("Components") { Components() }
+                Section("Components") { Components(focusSave) }
                 Section("Icons") { IconSamples() }
             }
         }
@@ -188,34 +194,55 @@ private fun TypeSamples() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Components() {
+private fun Components(focusSave: Boolean) {
     val c = MedicAllTheme.colours
+    val save = remember { FocusRequester() }
+    if (focusSave) LaunchedEffect(Unit) { save.requestFocus() }
+    val firstFocus = Modifier.focusRequester(save)
     var on by remember { mutableStateOf(true) }
     var chip by remember { mutableStateOf(true) }
     var field by remember { mutableStateOf("12.5") }
     Column(verticalArrangement = Arrangement.spacedBy(Space.steps(3))) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalArrangement = Arrangement.spacedBy(Space.steps(2))) {
+            // Each control sits in a FocusRingTarget, so a keyboard's focus shows R122's ring round it.
             val shape = MedicAllComponents.buttonShape
-            Button(onClick = {}, shape = shape, colors = MedicAllComponents.buttonColours()) { Text("Save") }
-            OutlinedButton(onClick = {}, shape = shape, colors = MedicAllComponents.secondaryButtonColours(), border = MedicAllComponents.secondaryButtonBorder(true)) { Text("Cancel") }
-            FilledTonalButton(onClick = {}, shape = shape, colors = MedicAllComponents.tonalButtonColours()) { Text("Tonal") }
+            FocusRingTarget(firstFocus) { m -> Button(onClick = {}, m, shape = shape, colors = MedicAllComponents.buttonColours()) { Text("Save") } }
+            FocusRingTarget { m -> OutlinedButton(onClick = {}, m, shape = shape, colors = MedicAllComponents.secondaryButtonColours(), border = MedicAllComponents.secondaryButtonBorder(true)) { Text("Cancel") } }
+            FocusRingTarget { m -> FilledTonalButton(onClick = {}, m, shape = shape, colors = MedicAllComponents.tonalButtonColours()) { Text("Tonal") } }
             Button(onClick = {}, enabled = false, shape = shape, colors = MedicAllComponents.buttonColours()) { Text("Disabled") }
         }
         // Chips wrap to the next line at large font sizes instead of squeezing their labels (R115 at 200%).
         FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalArrangement = Arrangement.spacedBy(Space.steps(2))) {
-            FilterChip(selected = chip, onClick = { chip = !chip }, label = { Text("Selected") }, leadingIcon = if (chip) {
-                { Icon(painterResource(MedicAllIcons.Phosphor.Check), null, Modifier.size(18.dp)) }
-            } else null)
-            FilterChip(selected = false, onClick = {}, label = { Text("Not selected") })
+            FocusRingTarget { m ->
+                FilterChip(
+                    selected = chip, onClick = { chip = !chip }, label = { Text("Selected") }, modifier = m,
+                    leadingIcon = if (chip) {
+                        { Icon(painterResource(MedicAllIcons.Phosphor.Check), null, Modifier.size(18.dp)) }
+                    } else null,
+                    colors = MedicAllComponents.filterChipColours(), border = MedicAllComponents.filterChipBorder(true, chip),
+                )
+            }
+            FocusRingTarget { m ->
+                FilterChip(
+                    selected = false, onClick = {}, label = { Text("Not selected") }, modifier = m,
+                    colors = MedicAllComponents.filterChipColours(), border = MedicAllComponents.filterChipBorder(true, false),
+                )
+            }
+            FilterChip(
+                selected = false, onClick = {}, label = { Text("Disabled") }, enabled = false,
+                colors = MedicAllComponents.filterChipColours(), border = MedicAllComponents.filterChipBorder(false, false),
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.steps(4)), verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = on, onCheckedChange = { on = it }, colors = MedicAllComponents.switchColours())
-            Switch(checked = !on, onCheckedChange = { on = !it }, colors = MedicAllComponents.switchColours())
+            FocusRingTarget(ringShape = PillShape) { m -> Switch(checked = on, onCheckedChange = { on = it }, m, colors = MedicAllComponents.switchColours()) }
+            FocusRingTarget(ringShape = PillShape) { m -> Switch(checked = !on, onCheckedChange = { on = !it }, m, colors = MedicAllComponents.switchColours()) }
             Switch(checked = true, onCheckedChange = null, enabled = false, colors = MedicAllComponents.switchColours())
         }
-        OutlinedTextField(field, { field = it }, label = { Text("Dose (mg)") }, textStyle = MedicAllTheme.type.body.tabular())
+        val fieldColours = MedicAllComponents.textFieldColours()
+        OutlinedTextField(field, { field = it }, label = { Text("Dose (mg)") }, textStyle = MedicAllTheme.type.body.tabular(), colors = fieldColours)
+        OutlinedTextField("Paracetamol", {}, label = { Text("Disabled") }, enabled = false, colors = fieldColours)
         OutlinedTextField(
-            "", {}, label = { Text("Name") }, isError = true,
+            "", {}, label = { Text("Name") }, isError = true, colors = fieldColours,
             supportingText = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.steps(1))) {
                     Icon(painterResource(MedicAllIcons.Phosphor.Info), null, Modifier.size(16.dp), tint = c.error)

@@ -44,7 +44,7 @@ class ThemePreviewRenderTest {
                 width = width, height = (heightDp * density).toInt(), density = Density(density, fontScale),
             )
             try {
-                scene.setContent { Box(Modifier.width(widthDp.dp)) { PaletteSample(palette, dark) } }
+                scene.setContent { Box(Modifier.width(widthDp.dp)) { PaletteSample(palette, dark, focusSave = true) } }
                 // Resource fonts and icons load over a few frames.
                 repeat(6) { scene.render(it * 50_000_000L) }
                 val image: Image = scene.render(400_000_000L)
