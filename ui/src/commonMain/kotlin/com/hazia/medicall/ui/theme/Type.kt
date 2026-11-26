@@ -42,7 +42,7 @@ const val SELECTED_NAVIGATION_WEIGHT = 600
 
 /**
  * MedicAll's text styles by SPEC:R115's role names. Screens take these (or Material's roles, which [material] maps to
- * them); a time, dose or count that stacks in a column or changes in place takes [tabular] on an Atkinson role.
+ * them); a time, dose or count that stacks in a column or ticks in place takes [tabular] on an Atkinson role.
  */
 @Immutable
 data class MedicAllType(
@@ -120,8 +120,8 @@ data class MedicAllType(
 }
 
 /**
- * Tabular figures (`tnum`) for times, doses and counts that stack in a column or change in place, so digits line up
- * and do not jump (SPEC:R115). Only Atkinson Hyperlegible Next has them: on a Fraunces role this changes nothing, and
+ * Tabular figures (`tnum`) for times, doses and counts that stack in a column or tick in place, as a countdown does,
+ * so digits line up and do not jump (SPEC:R115). Only Atkinson Hyperlegible Next has them: on a Fraunces role this changes nothing, and
  * R115 leaves Fraunces' figures proportional.
  */
 fun TextStyle.tabular(): TextStyle = copy(fontFeatureSettings = "tnum")

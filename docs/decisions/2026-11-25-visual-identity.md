@@ -52,8 +52,9 @@ Fraunces 500 for titles, Atkinson Hyperlegible Next for everything else. The typ
 Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures. Fraunces has
 proportional figures only; building the Compose theme found R115 asking for tabular figures in it too
 (the time picker's digits, a date picker headline, a strength in a medicine name), and on 2026-11-26 the
-owner kept tabular figures to times, doses and counts that stack in a column or change in place, always
-in an Atkinson role, leaving a Fraunces role's figures proportional.
+owner kept tabular figures to times, doses and counts that stack in a column or tick in place (a
+countdown), always in an Atkinson role, leaving proportional the pickers' digits, each in its own box,
+and a Fraunces role's figures.
 
 ## 4. Gaps closed before merging (2026-11-26)
 
@@ -139,6 +140,10 @@ them (R100). Left open, to settle before the screen that needs it:
 - Pain's 0 to 10 has eleven steps, against the glossary's "2 to 10 ordered steps" (an older conflict);
 - the week strip: a "late" state (the glossary has a late window), as-needed doses, pill size, and its fit
   at 320 dp;
+- the navigation bar at 200% font size on a 320 dp phone: the theme's desktop render
+  (`ui/build/theme-preview/*-320dp-200.png`, linear scaling) breaks three labels mid-word ("Medi cines").
+  Android 14's non-linear scaling grows 15 sp labels almost as much, so the destinations need short labels,
+  hyphenation or another layout, settled with the owner (R95); chips and buttons wrap in a FlowRow;
 - colours for lab range bands, app flags, out-of-range points and PDF charts (R44, R46): any new colour
   needs an owner ruling in R93's terms;
 - the Android notification icon and the themed (monochrome) launcher layer;

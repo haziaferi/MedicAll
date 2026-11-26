@@ -201,7 +201,8 @@ private fun Components() {
             FilledTonalButton(onClick = {}, shape = shape, colors = MedicAllComponents.tonalButtonColours()) { Text("Tonal") }
             Button(onClick = {}, enabled = false, shape = shape, colors = MedicAllComponents.buttonColours()) { Text("Disabled") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalAlignment = Alignment.CenterVertically) {
+        // Chips wrap to the next line at large font sizes instead of squeezing their labels (R115 at 200%).
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalArrangement = Arrangement.spacedBy(Space.steps(2))) {
             FilterChip(selected = chip, onClick = { chip = !chip }, label = { Text("Selected") }, leadingIcon = if (chip) {
                 { Icon(painterResource(MedicAllIcons.Phosphor.Check), null, Modifier.size(18.dp)) }
             } else null)

@@ -1538,7 +1538,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R115 · Type
 
-**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next; times, doses and counts that stack in a column or change in place are set in an Atkinson role with tabular figures, and a Fraunces role's figures stay proportional. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
+**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next; times, doses and counts that stack in a column or tick in place, as a countdown does, are set in an Atkinson role with tabular figures, while digits each in a box of their own, as in the time and date pickers, and a Fraunces role's figures stay proportional. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
 
 **Why:** Atkinson Hyperlegible was drawn for low-vision readers and tells similar letters and digits apart, which suits doses read when tired; a 1.25 ratio keeps headings calm on a phone.
 
