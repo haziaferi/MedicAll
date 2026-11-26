@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "medicall"
 
-include(":core", ":data", ":android")
+include(":core", ":data", ":ui", ":android")

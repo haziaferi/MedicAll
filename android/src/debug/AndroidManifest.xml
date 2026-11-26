@@ -33,5 +33,17 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- The Compose theme's preview (SPEC:R93): every palette in light and dark, from its own launcher icon. -->
+        <activity
+            android:name=".ThemePreviewActivity"
+            android:exported="true"
+            android:label="MedicAll theme"
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

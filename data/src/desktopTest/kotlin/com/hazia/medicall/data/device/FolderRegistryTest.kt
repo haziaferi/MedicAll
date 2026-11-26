@@ -1,6 +1,12 @@
 package com.hazia.medicall.data.device
 
 import com.hazia.medicall.core.lock.LockState
+import com.hazia.medicall.core.look.DeviceLook
+import com.hazia.medicall.core.look.LightDark
+import com.hazia.medicall.core.look.Palette
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -100,6 +106,58 @@ class FolderRegistryTest {
         val again = FolderRegistry(file)
         assertEquals(listOf(b), again.folders())
         assertEquals(lock, again.lock())
+        assertEquals(1, file.keptAside.size)
+    }
+
+    @Test
+    fun theLookStartsOnAlbarelloFollowingTheSystem_SPEC_R114() {
+        val registry = FolderRegistry(MemorySealedFile(null))
+        assertEquals(DeviceLook(LightDark.SYSTEM, Palette.ALBARELLO), registry.look())
+    }
+
+    @Test
+    fun theLookIsKeptWithTheFoldersAndTheLock_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val folder = registry.add("Folder A", "content://tree/folder-a")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        for (lightDark in LightDark.entries) for (palette in Palette.entries) {
+            registry.saveLook(DeviceLook(lightDark, palette))
+            val again = FolderRegistry(file)
+            assertEquals(DeviceLook(lightDark, palette), again.look())
+            assertEquals(listOf(folder), again.folders())
+            assertEquals(lock, again.lock())
+        }
+        assertTrue(file.keptAside.isEmpty())
+    }
+
+    @Test
+    fun aFileFromBeforeTheLookReadsWhole_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        registry.add("Folder A", "content://tree/folder-a")
+        val withoutLook = Json.parseToJsonElement(file.bytes!!.decodeToString()).jsonObject.let { JsonObject(it - "look") }
+        file.bytes = withoutLook.toString().encodeToByteArray()
+
+        val again = FolderRegistry(file)
+        assertEquals(DeviceLook.DEFAULT, again.look())
+        assertEquals(1, again.folders().size)
+        assertTrue(file.keptAside.isEmpty())
+    }
+
+    @Test
+    fun aLookThatDoesNotReadIsTheDefaultAndKeepsTheRest_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val folder = registry.add("Folder A", "content://tree/folder-a")
+        registry.saveLook(DeviceLook(LightDark.DARK, Palette.MURANO))
+        val original = file.bytes!!.decodeToString()
+        file.bytes = original.replace(""""palette":"murano"""", """"palette":"no-such-palette"""").encodeToByteArray()
+
+        val again = FolderRegistry(file)
+        assertEquals(DeviceLook.DEFAULT, again.look())
+        assertEquals(listOf(folder), again.folders())
         assertEquals(1, file.keptAside.size)
     }
 }
