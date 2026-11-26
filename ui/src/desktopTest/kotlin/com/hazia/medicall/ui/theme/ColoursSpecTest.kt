@@ -2,6 +2,9 @@ package com.hazia.medicall.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.colorspace.ColorSpaces
+import kotlin.math.atan2
+import kotlin.math.hypot
 import com.hazia.medicall.core.look.Palette
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,6 +49,27 @@ class ColoursSpecTest {
             val spec = palettes.getValue(look) + states.getValue(look) + containers.getValue(look) + scales.getValue(look)
             assertEquals(spec.keys, named(theme).keys, "the theme names every colour of the spec and no other")
             for ((name, colour) in spec) assertEquals(colour, named(theme).getValue(name), "$look $name")
+        }
+    }
+
+    /** OKLCh chroma and hue in degrees, from Compose's own OKLab conversion. */
+    private fun chromaHue(c: Color): Pair<Double, Double> {
+        val lab = c.convert(ColorSpaces.Oklab)
+        val a = lab.green.toDouble()
+        val b = lab.blue.toDouble()
+        return hypot(a, b) to (Math.toDegrees(atan2(b, a)) + 360) % 360
+    }
+
+    @Test
+    fun onlyTheErrorColourIsRed_SPEC_R114() {
+        // The conversion matches the spec's measurements: Capsule light's taken colour at hue 4.7.
+        assertEquals(4.7, chromaHue(coloursOf(Palette.CAPSULE, false).taken).second, 0.1)
+        for (look in looks) {
+            for ((name, colour) in named(coloursOf(look.first, look.second))) {
+                val (chroma, hue) = chromaHue(colour)
+                val red = chroma > 0.04 && hue in 15.0..40.0
+                assertEquals(name == "Error", red, "$look $name: hue ${"%.1f".format(hue)}, chroma ${"%.3f".format(chroma)}")
+            }
         }
     }
 

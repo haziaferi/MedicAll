@@ -177,3 +177,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R122 · changed · three containers and a disabled fill per palette and mode; inversePrimary and onTertiary corrected · owner
 - 2026-11-26 · R116 · changed · no double rule above the band now that it runs under the status bar · owner
 - 2026-11-26 · R93 · changed · launcher icon and splash screen exempt from the colour-literal ban (R118) · owner
+- 2026-11-26 · R114 · changed · red defined as the error band, OKLCh hue 15 to 40 at chroma above 0.04 · owner

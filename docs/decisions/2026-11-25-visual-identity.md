@@ -114,6 +114,10 @@ A third read, of what Compose and Android draw on their own, found more; the own
   outside the theme, while R118's tile, capsule and splash colours can only be literals in Android's
   resources, drawn before the app's theme exists. The owner exempted the launcher icon and splash screen
   in R93, as R114 already exempts the launcher's red.
+- **What red is (R114).** R114 kept red for the error colour without defining it, and by R121's scale
+  band (hue 345 to 45) Capsule's taken colour (3 to 5) and Murano's accent (352 to 354) were red. The
+  owner defined red as R122's error band, OKLCh hue 15 to 40 at chroma above 0.04: only the eight error
+  colours sit there, so the rose and pink stay, and R121 keeps its wider band for scale colours.
 
 ## 5. Not checked, and left for the phase that builds each screen
 
