@@ -162,3 +162,10 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R114 · changed · light or dark is one device setting; control outlines take the muted text colour · owner
 - 2026-11-26 · R120 · changed · today's label set bold, the accent underline is ornament · owner
 - 2026-11-26 · R121 · added · scale colours · owner
+- 2026-11-26 · R122 · added · state colours: link, focus, switch on, disabled, error; Material roles mapped · owner
+- 2026-11-26 · R93 · changed · parts R114 to R122; acceptance names each rule and bans colour literals · owner
+- 2026-11-26 · R114 · changed · device palette for screens with no profile; red only as the error colour · owner
+- 2026-11-26 · R115 · changed · acceptance names the phone and how to set 320 dp · owner
+- 2026-11-26 · R116 · changed · no wordmark row; band sizes; main screen and shown profiles defined · owner
+- 2026-11-26 · R120 · changed · today's label at weight 600; legend under the strip, as on the mock-up · owner
+- 2026-11-26 · spec · changed · glossary: "Palette", "Band" and "Blister strip" added · owner

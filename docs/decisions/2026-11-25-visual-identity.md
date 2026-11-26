@@ -1,7 +1,7 @@
-# 2026-11-25 · Visual identity: Albarello (SPEC:R93, SPEC:R114 to SPEC:R120)
+# 2026-11-25 · Visual identity: Albarello (SPEC:R93, SPEC:R114 to SPEC:R122, SPEC:R53)
 
-**Decision (owner, 2026-11-25):** MedicAll's look is Albarello, taken from the Italian maiolica pharmacy
-jar. Its rules are R93 and R114 to R120; the agreed mock-up is `docs/design/identity.png`, the launcher
+**Decision (owner, 2026-11-25, completed 2026-11-26):** MedicAll's look is Albarello, taken from the
+Italian maiolica pharmacy jar. Its rules are R93 and R114 to R122, with R53 reworded; the agreed mock-up is `docs/design/identity.png`, the launcher
 source is `docs/design/launcher.svg` (with the owner's Affinity file `launcher.af`), and the custom icons
 are in `docs/design/icons`. All names and medicines in the images are invented.
 
@@ -33,7 +33,8 @@ Palettes from the owner's other apps were ruled out first, so none of the direct
   harmonious alternative duplicated Capsule's rose.
 - **Dark mode.** Two dark taken colours were too dim (3.0 and 4.3:1 on the card); they were lifted to
   5:1, the most the rose allows before it nears the apricot rule for deutan vision. Dark grounds stay
-  near-black, which the phone checks for OLED smear and halation pass.
+  near-black; color-optimization-core's phone checks for OLED smear and halation pass on the values
+  (computed, not seen on a phone).
 - **Lock screen.** The owner asked for the system keyboard instead of an in-app keypad (R119).
 - **Icons.** A custom batch was drawn and compared with Material Rounded, Phosphor and Lucide. The owner
   took Phosphor for generic controls and the custom set for MedicAll's own objects; Phosphor's pill
@@ -66,11 +67,37 @@ A pre-merge read of the rules against the rest of the spec found four gaps; the 
 - **Control outlines.** The line colour is 1.3 to 1.4:1 on the card, too faint for a text field or a
   switch's off track; those take the muted text colour (R114).
 - **Today in the week strip.** The accent underline alone is 2.2:1 in Capsule light, so today's label
-  is also set bold (R120).
+  is also set at weight 600 (R120).
 - **Light or dark.** One setting for the whole device, not per profile (R114).
 
-## 5. Not checked
+A second, independent read of the whole spec against these rules found more; the owner settled these:
+
+- **State colours (R122).** No rule coloured focus, switch on, disabled, links, secondary buttons or
+  errors, and Compose fills unset roles with Material's purple and red. The owner allowed red only for
+  actual errors and asked for every other state colour to be derived. Five roles per palette and mode
+  were searched against the whole palette; the focus ring is drawn 2 dp off its control so it is judged
+  against the card. In Capsule dark and Murano dark a 7:1 red landed on the palette's own rose and pink,
+  so the owner took a 4.5:1 brick red there. Every Material 3 role is mapped. Board: `docs/design/states.png`.
+- **Screens with no profile.** Lock, first run, passphrase and the profile list show a device palette the
+  person chooses, Albarello by default (R114).
+- **The band.** The wordmark row above the band was dropped; the band's sizes, the screens without one and
+  "shown" profiles are now in R116. The mock-up was re-rendered to match the rules: no wordmark row,
+  outlines in the muted text colour, the state colours and the strip's legend.
+- **Wording.** Today's label at weight 600 (R115 caps weight at 600), the scale mixing in OKLab, the hue
+  floor's rounding, the OLED claim marked as computed, and R115's check named on the OnePlus 9 Pro.
+
+## 5. Not checked, and left for the phase that builds each screen
 
 Everything was rendered in a headless browser at 1x, not on the phones of R09: the launcher masks, the
 icons at real pixel densities, and the reading screens at 200% font size are checked when phase 2b builds
-them (R100).
+them (R100). Left open, to settle before the screen that needs it:
+
+- charts: whether a tracker keeps one scale colour everywhere or takes one by chart order, marker sizes,
+  lines or dot rows, and more than twelve trackers; low scale steps (1.5 to 2.4:1) have no floor;
+- Pain's 0 to 10 has eleven steps, against the glossary's "2 to 10 ordered steps" (an older conflict);
+- the week strip: a "late" state (the glossary has a late window), as-needed doses, pill size, and its fit
+  at 320 dp;
+- colours for lab range bands, app flags, out-of-range points and PDF charts (R44, R46): any new colour
+  needs an owner ruling in R93's terms;
+- the Android notification icon and the themed (monochrome) launcher layer;
+- licence notices for the bundled fonts (OFL) and Phosphor (MIT), and tritan vision for every colour set.

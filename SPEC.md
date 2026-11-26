@@ -116,6 +116,7 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 | D-R119 | Lock screen look | 16. Visual design |
 | D-R120 | Week strip | 16. Visual design |
 | D-R121 | Scale colours | 16. Visual design |
+| D-R122 | State colours | 16. Visual design |
 | D-R94 | Today screen | 16. Visual design |
 | D-R95 | Frontend decisions are the owner's | 16. Visual design |
 | D-R96 | A dose confirmed on two devices | 17. Edge cases |
@@ -1487,13 +1488,13 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R93 · Visual identity
 
-**Rule:** MedicAll's visual identity is Albarello, taken from the Italian maiolica pharmacy jar: tin-glaze grounds, a cobalt band edged by a saffron double rule, Fraunces for titles and Atkinson Hyperlegible Next for everything else. R114 to R121 fix its parts, and a screen departs from them only by an owner ruling recorded here.
+**Rule:** MedicAll's visual identity is Albarello, taken from the Italian maiolica pharmacy jar: tin-glaze grounds, a cobalt band edged by a saffron double rule, Fraunces for titles and Atkinson Hyperlegible Next for everything else. R114 to R122 fix its parts, and a screen departs from them only by an owner ruling recorded here.
 
 **Why:** The owner chose it over three other directions (Capsule, Record card, Drawing wall), scored on four axes the owner set: calm, distinctive, legible at a glance and trustworthy. It is MedicAll's own and calm without being sterile.
 
 **Evidence:** The options, renders and measurements are in `docs/decisions/2026-11-25-visual-identity.md`, and the agreed mock-up is `docs/design/identity.png`. The visual-craft skill led the process; palettes were fitted and audited with color-optimization-core, and drawings were checked with the svg-illustration loop (owner, 2026-11-25).
 
-**Acceptance:** Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115, R116 and R121.
+**Acceptance:** Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
 
 **Not:** Reusing the palette or design of another of the owner's apps; a stock Material look.
 
@@ -1501,7 +1502,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R114 · Palettes
 
-**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced; a new profile starts on Albarello, and light or dark is one setting for the whole device that follows the system unless the person sets it in the app. The band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, and the line colour serves only dividers and card edges.
+**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced, and screens that belong to no profile (lock, first run, passphrase, the profile list) show a device palette the person chooses; both start on Albarello. Light or dark is one setting for the whole device that follows the system unless the person sets it in the app; the band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, and the line colour serves only dividers and card edges.
 
 **Why:** A carer tells profiles apart at a glance by their colours (R14), and an adult who wants a more colourful app has one without a childish look. Each palette's taken colour was derived from that palette's own harmony, not picked by eye on one screen (owner, 2026-11-25).
 
@@ -1527,11 +1528,11 @@ People who live with several conditions keep medicines, appointments, lab report
 | Dark-mode body text against its ground | under 15:1 |
 | Taken colour against main and accent, deutan and protan | at least 10 ΔE2000 |
 | Dark grounds | near-black, never #000000 |
-| Red | in no palette |
+| Red | only the error colour (R122) |
 
-**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass the phone checks for OLED smear and halation. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26).
+**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass color-optimization-core's phone checks for OLED smear and halation, computed from the values, not seen on a phone. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26).
 
-**Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello; the light or dark setting is the same for every profile on the device.
+**Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 
 **Since:** 2026-11-26 · owner · agreed rewording
 
@@ -1555,19 +1556,27 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built.
 
-**Acceptance:** At 200% system font size and 320 dp width no text on a phase 2b screen is cut or overlaps, and the times in a dose list line up in a column.
+**Acceptance:** On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column.
 
-**Since:** 2026-11-25 · owner · agreed rewording
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R116 · Shape, space and the band
 
-**Rule:** Corners are 10 dp except on pills and switches, spacing follows a 4 dp grid with 20 dp screen margins and 16 dp card padding, and primary actions have 48 dp targets. Every main screen opens with the band: the main colour edged above and below by the accent's double rule, carrying the screen's title. When the device shows two or more profiles, the open profile's name takes the band's large line and the screen's title moves to its small line.
+**Rule:** Corners are 10 dp except on pills and switches, spacing follows a 4 dp grid with 20 dp screen margins and 16 dp card padding, and primary actions have 48 dp targets. Every main screen, one reached from the app's own navigation, opens straight with the band, with no wordmark row above it: the main colour with 12 dp by 20 dp padding, edged above and below by the accent's double rule as in Values, carrying the screen's title in the Title role. When two or more profiles are shown on the device (not hidden and not in the bin), the open profile's name takes the band's Title line and the screen's title moves to a Caption line below it.
 
 **Why:** The band is the identity's signature, the painted band of the jar; most phones hold one profile (R14), so it carries the screen there, and a carer can never miss whose record is open.
 
-**Acceptance:** With one profile the band reads the screen's title; after a second profile is added, every band leads with the open profile's name.
+**Values:**
 
-**Since:** 2026-11-25 · owner · agreed rewording
+| Part | Value |
+|---|---|
+| Inner accent line | 3 dp, 4 dp from the band |
+| Outer accent line | 1 dp, 2 dp beyond the inner line |
+| Screens without a band | the lock screen (R119), first run, passphrase screens and dialogs |
+
+**Acceptance:** With one shown profile the band reads the screen's title; once a second shown profile exists, every band leads with the open profile's name; no main screen has a wordmark row.
+
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R117 · Icons
 
@@ -1607,7 +1616,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R120 · Week strip
 
-**Rule:** A week of doses is shown as a blister strip: one row per dose time, one column per day, and today's day label set bold in the text colour and underlined in the accent. A taken dose is a solid pill in the taken colour, not yet is an outline, skipped is struck through and missed is dashed, with a legend beside the strip.
+**Rule:** A week of doses is shown as a blister strip: one row per dose time, one column per day, and today's day label set at weight 600 (R115) in the text colour and underlined in the accent. A taken dose is a solid pill in the taken colour, not yet is an outline, skipped is struck through and missed is dashed, with a legend under the strip.
 
 **Why:** It borrows the blister pack, an object the person handles every day, and tells each state by shape (owner, 2026-11-25).
 
@@ -1619,7 +1628,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R121 · Scale colours
 
-**Rule:** Each palette and mode has the three scale colours in Values, and a scale step is drawn in its tracker's colour mixed toward the card, from 35% at the lowest step to full at the highest, with a marker that grows with the step. A chart gives each tracker one scale colour and its name beside its line; past three trackers the colours repeat with a different marker shape (circle, square, diamond, triangle). No scale colour is red or green, and none marks a value as good or bad (R53).
+**Rule:** Each palette and mode has the three scale colours in Values, and a scale step is drawn in its tracker's colour mixed with the card in OKLab, from 35% of the colour at the lowest step to full colour at the highest, with a marker that grows with the step. A chart gives each tracker one scale colour and its name beside its line; past three trackers the colours repeat with a different marker shape (circle, square, diamond, triangle). No scale colour is red or green, and none marks a value as good or bad (R53).
 
 **Why:** The owner asked for colours that show high and low by intensity rather than by green and red, kept apart from the palette's own colours (owner, 2026-11-26). Lightness carries the value, so a set shares one lightness and its colours differ by hue.
 
@@ -1640,13 +1649,62 @@ People who live with several conditions keep medicines, appointments, lab report
 |---|---|
 | Full step against the card | at least 3:1 |
 | Against each other and main, accent and taken, normal, deutan and protan | at least 10 ΔE2000 |
-| OKLCh hue | outside red (345 to 45) and green (110 to 185; 110 to 195 in Murano dark) |
+| OKLCh hue | outside 345 to 45 and 110 to 185 (110 to 195 in Murano dark), within 1 degree of gamut rounding |
 | Hue apart within a set | at least 40 degrees (60 in Murano dark) |
 | Lightness spread within a set | under 0.09 OKLCh |
 
 **Evidence:** Searched per palette and mode with color-optimization-core's colour maths on 2026-11-26 and shown in `docs/design/scales.png`: worst gap 10.4 (Plum & olive light) to 16.3, full steps 3.05 to 9.8:1 on the card. Four colours broke the floors in Albarello light, Plum & olive light and Capsule dark, so three is what holds in every palette. Gamut rounding left three hues on a band's edge (Albarello light's rust at 44.9, the teals at 184.3 and 185.1), which the owner accepted on the board; not checked: tritan vision, and pale low steps of two trackers against each other, which the marker and label carry.
 
 **Acceptance:** The Compose theme defines exactly these colours per palette and mode; a chart of five trackers names every line, and no two of its trackers share both colour and marker shape.
+
+**Since:** 2026-11-26 · owner · agreed rewording
+
+### D-R122 · State colours
+
+**Rule:** Each palette and mode has the five state colours in Values: links and a secondary button's label and outline take the link colour, a 3 dp focus ring drawn 2 dp off its control takes the focus colour, a switch's on track takes the switch colour under a thumb in the card colour, and disabled labels and outlines take the disabled colour. The error colour is the only red in the app and marks only something that went wrong in the app or in what the person entered, always with an information icon and words; a wrong PIN (R119), a missed dose, a result outside its range and any scale end are not errors. Every Material 3 colour role is set as in Values, so none keeps a Material default.
+
+**Why:** Compose fills any unset role with Material's purple and red, and the owner wants neither: red only for actual errors, and every other state colour derived from the palette (owner, 2026-11-26).
+
+**Values:**
+
+| Palette | Mode | Link | Focus | Switch on | Disabled | Error |
+|---|---|---|---|---|---|---|
+| Albarello | light | #1334C9 | #1B44EB | #497AFF | #7281A4 | #830021 |
+| Albarello | dark | #9CB4FE | #4158FF | #6E88E1 | #657E7F | #FFB097 |
+| Plum & olive | light | #67005E | #87007B | #B13DA3 | #848F8B | #58010E |
+| Plum & olive | dark | #F8A1E7 | #D224BD | #B059A1 | #637379 | #FEAEA8 |
+| Capsule | light | #014351 | #0096B3 | #047288 | #83887A | #910224 |
+| Capsule | dark | #0ACFED | #04DFFF | #0BC1DD | #616558 | #C8715D |
+| Murano | light | #005A44 | #009D90 | #037C5F | #91827E | #680017 |
+| Murano | dark | #0CD9A9 | #00FFEB | #0EAF88 | #6C7D7B | #C77B73 |
+
+| Floor | Value |
+|---|---|
+| Link against card and ground | at least 7:1 |
+| Error against card and ground | at least 7:1; 4.5:1 in Capsule dark and Murano dark |
+| Focus and switch on against the card | at least 3:1 |
+| Disabled against the card | 2.5:1 to 4:1 |
+| Link from text, switch on from muted text, disabled from muted text, normal, deutan and protan | at least 10 ΔE2000 |
+| Error from main, accent, taken and the scale colours, normal, deutan and protan | at least 10 ΔE2000 |
+| Error hue | OKLCh 15 to 40 |
+
+| Material 3 role | Takes |
+|---|---|
+| primary, onPrimary | main, on main |
+| secondary, onSecondary | link, card |
+| tertiary, onTertiary | accent, text |
+| background, onBackground | ground, text |
+| surface and every surfaceContainer, surfaceBright, surfaceDim, surfaceTint | card |
+| onSurface, onSurfaceVariant, surfaceVariant | text, muted text, ground |
+| primaryContainer, secondaryContainer, tertiaryContainer | card, with text on them |
+| inverseSurface, inverseOnSurface, inversePrimary | text, card, link |
+| outline, outlineVariant | muted text, line |
+| error, onError, errorContainer, onErrorContainer | error, card, card, error |
+| scrim | text |
+
+**Evidence:** Searched per palette and mode with color-optimization-core's colour maths against each whole palette on 2026-11-26 and shown in `docs/design/states.png`: links 7.8 to 11.5:1, errors 9.0 to 14.0:1 (4.55 and 4.9:1 in the two dark exceptions), focus 3.1 to 12.5:1, switches 3.7 to 7.4:1 and disabled 2.7 to 3.8:1 on the card, with every separation at 10.5 ΔE2000 or more. At 7:1 the dark-mode red of Capsule and Murano landed on their own rose and pink, so the owner took 4.5:1 there. Murano's link, focus and switch sit in its green main colour's family; R121's no-green floor is for scale colours only.
+
+**Acceptance:** The Compose theme sets every ColorScheme role from these tables and no colour literal appears outside it; a form that cannot be saved shows its message in the error colour with the icon; a wrong PIN, a missed dose and an out-of-range result show no error colour.
 
 **Since:** 2026-11-26 · owner · agreed rewording
 
@@ -1828,15 +1886,16 @@ People who live with several conditions keep medicines, appointments, lab report
 - R89 · Hormonal contraception switch: Adding a contraceptive raises the suggestion; a change in logged flow alone never does.
 - R90 · Pregnancy and fertility bundle: With the bundle off, no pregnancy or ovulation item appears; logging a pregnancy pauses period predictions.
 - R91 · Bundles: Turning a bundle on switches on its contents for that profile only, and turning it off hides them without deleting entries.
-- R93 · Visual identity: Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115, R116 and R121.
-- R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello; the light or dark setting is the same for every profile on the device.
-- R115 · Type: At 200% system font size and 320 dp width no text on a phase 2b screen is cut or overlaps, and the times in a dose list line up in a column.
-- R116 · Shape, space and the band: With one profile the band reads the screen's title; after a second profile is added, every band leads with the open profile's name.
+- R93 · Visual identity: Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
+- R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
+- R115 · Type: On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column.
+- R116 · Shape, space and the band: With one shown profile the band reads the screen's title; once a second shown profile exists, every band leads with the open profile's name; no main screen has a wordmark row.
 - R117 · Icons: No icon from another set appears in the app, and the three dose states are told apart in greyscale.
 - R118 · Launcher icon: The Android build's adaptive icon matches `docs/design/launcher.svg`, and no mask on the phones of R09 clips any part of it.
 - R119 · Lock screen look: On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
 - R120 · Week strip: In greyscale the four states and today are told apart.
 - R121 · Scale colours: The Compose theme defines exactly these colours per palette and mode; a chart of five trackers names every line, and no two of its trackers share both colour and marker shape.
+- R122 · State colours: The Compose theme sets every ColorScheme role from these tables and no colour literal appears outside it; a form that cannot be saved shows its message in the error colour with the icon; a wrong PIN, a missed dose and an out-of-range result show no error colour.
 - R96 · A dose confirmed on two devices: After the sync, the dose shows one confirmation and the stock falls once.
 - R97 · A profile removed: A removed and restored profile has the same record count as before.
 - R98 · Time zones and daylight saving: Emivita's daylight-saving scheduler tests pass in the port.
