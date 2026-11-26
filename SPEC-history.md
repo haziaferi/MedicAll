@@ -149,3 +149,29 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-25 · R11 · changed · evidence: a damaged device file and a restart during a wait · owner
 - 2026-11-25 · R14 · changed · birth date from 1900-01-01 to today · owner
 - 2026-11-25 · R110 · changed · evidence: a profile in the bin fires no reminder and is not shown · owner
+- 2026-11-25 · R93 · changed · the identity is Albarello, its parts fixed by R114 to R120 · owner
+- 2026-11-25 · R114 · added · palettes · owner
+- 2026-11-25 · R115 · added · type · owner
+- 2026-11-25 · R116 · added · shape, space and the band · owner
+- 2026-11-25 · R117 · added · icons · owner
+- 2026-11-25 · R118 · added · launcher icon · owner
+- 2026-11-25 · R119 · added · lock screen look · owner
+- 2026-11-25 · R120 · added · week strip · owner
+- 2026-11-26 · R53 · changed · colour shows only how high a step is, never good or bad; no green or red on any scale · owner
+- 2026-11-26 · R93 · changed · R121 joins the identity's parts and its acceptance · owner
+- 2026-11-26 · R114 · changed · light or dark is one device setting; control outlines take the muted text colour · owner
+- 2026-11-26 · R120 · changed · today's label set bold, the accent underline is ornament · owner
+- 2026-11-26 · R121 · added · scale colours · owner
+- 2026-11-26 · R122 · added · state colours: link, focus, switch on, disabled, error; Material roles mapped · owner
+- 2026-11-26 · R93 · changed · parts R114 to R122; acceptance names each rule and bans colour literals · owner
+- 2026-11-26 · R114 · changed · device palette for screens with no profile; red only as the error colour · owner
+- 2026-11-26 · R115 · changed · acceptance names the phone and how to set 320 dp · owner
+- 2026-11-26 · R116 · changed · no wordmark row; band sizes; main screen and shown profiles defined · owner
+- 2026-11-26 · R120 · changed · today's label at weight 600; legend under the strip, as on the mock-up · owner
+- 2026-11-26 · spec · changed · glossary: "Palette", "Band" and "Blister strip" added · owner
+- 2026-11-26 · R114 · changed · device settings join the screens with no profile; the launcher's capsule is the one red outside the error colour · owner
+- 2026-11-26 · R115 · changed · all fifteen Material 3 type roles mapped onto the seven roles · owner
+- 2026-11-26 · R116 · changed · band under the status bar; profile list and device settings carry the title only · owner
+- 2026-11-26 · R117 · changed · icons take the colour of the text beside them · owner
+- 2026-11-26 · R118 · changed · owner's redrawn icon: #3C5DB9 tile, green cross, red and cyan capsule, 1.5 dp outlines; splash on #3C5DB9 · owner
+- 2026-11-26 · R122 · changed · three containers and a disabled fill per palette and mode; inversePrimary and onTertiary corrected · owner
