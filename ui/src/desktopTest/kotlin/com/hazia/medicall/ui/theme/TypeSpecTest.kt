@@ -84,6 +84,14 @@ class TypeSpecTest {
     }
 
     @Test
+    fun theSelectedNavigationLabelIsAt600_SPEC_R122() {
+        assertEquals(type.label.copy(fontWeight = FontWeight(600)), type.navigationLabel(selected = true))
+        assertEquals(type.label, type.navigationLabel(selected = false))
+        assertEquals(TypeRole.LABEL, MedicAllType.MATERIAL_ROLES.getValue("labelMedium"), "the navigation bar's role")
+        assertTrue(600 in ATKINSON_WEIGHTS, "Atkinson is bundled at 600")
+    }
+
+    @Test
     fun tabularFiguresAreAvailable_SPEC_R115() {
         assertEquals("tnum", type.body.tabular().fontFeatureSettings)
         assertEquals(type.body.copy(fontFeatureSettings = null), type.body.tabular().copy(fontFeatureSettings = null))

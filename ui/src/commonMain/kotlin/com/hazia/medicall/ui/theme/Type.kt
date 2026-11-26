@@ -37,6 +37,9 @@ enum class TypeRole(val face: Face, val sizeSp: Int, val lineHeightSp: Int, val 
 val ATKINSON_WEIGHTS = listOf(400, 500, 600)
 const val FRAUNCES_WEIGHT = 500
 
+/** The selected navigation item's label weight (SPEC:R122). */
+const val SELECTED_NAVIGATION_WEIGHT = 600
+
 /**
  * MedicAll's text styles by SPEC:R115's role names. Screens take these (or Material's roles, which [material] maps to
  * them); a time, dose or count takes [tabular] on its style.
@@ -60,6 +63,13 @@ data class MedicAllType(
         TypeRole.CAPTION -> caption
         TypeRole.BUTTON -> button
     }
+
+    /**
+     * A navigation item's label (SPEC:R122): Material's navigation bar draws it in labelMedium, the Label role, and
+     * the selected item's label is set at weight 600. Screens pass it to the label's text.
+     */
+    fun navigationLabel(selected: Boolean): TextStyle =
+        if (selected) label.copy(fontWeight = FontWeight(SELECTED_NAVIGATION_WEIGHT)) else label
 
     /**
      * Material 3's fifteen type roles, each taking one of the seven as SPEC:R115's table says, so Compose draws no

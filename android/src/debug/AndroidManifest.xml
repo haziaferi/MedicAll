@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug builds only. Neither component reaches a release. -->
+<!-- Debug builds only. None of these components reaches a release. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <!-- A documents provider over app-private files, so the instrumented tests can open a Storage Access

@@ -38,7 +38,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hazia.medicall.core.look.Palette
 import com.hazia.medicall.ui.theme.MedicAllColours
@@ -226,11 +225,14 @@ private fun Components() {
         Surface(color = c.card, shape = MaterialTheme.shapes.medium) {
             NavigationBar(containerColor = c.card) {
                 NavigationBarItem(true, {}, { Icon(painterResource(MedicAllIcons.Own.Medicine), null) },
-                    label = { Text("Medicines", fontWeight = FontWeight(600)) }, colors = MedicAllComponents.navigationItemColours())
+                    label = { Text("Medicines", style = MedicAllTheme.type.navigationLabel(true)) },
+                    colors = MedicAllComponents.navigationItemColours())
                 NavigationBarItem(false, {}, { Icon(painterResource(MedicAllIcons.Phosphor.CalendarBlank), null) },
-                    label = { Text("Calendar") }, colors = MedicAllComponents.navigationItemColours())
+                    label = { Text("Calendar", style = MedicAllTheme.type.navigationLabel(false)) },
+                    colors = MedicAllComponents.navigationItemColours())
                 NavigationBarItem(false, {}, { Icon(painterResource(MedicAllIcons.Phosphor.Gear), null) },
-                    label = { Text("Settings") }, colors = MedicAllComponents.navigationItemColours())
+                    label = { Text("Settings", style = MedicAllTheme.type.navigationLabel(false)) },
+                    colors = MedicAllComponents.navigationItemColours())
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(Space.steps(2)), verticalAlignment = Alignment.CenterVertically) {
