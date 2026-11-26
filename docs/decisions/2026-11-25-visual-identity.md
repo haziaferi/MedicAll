@@ -39,7 +39,7 @@ Palettes from the owner's other apps were ruled out first, so none of the direct
 - **Icons.** A custom batch was drawn and compared with Material Rounded, Phosphor and Lucide. The owner
   took Phosphor for generic controls and the custom set for MedicAll's own objects; Phosphor's pill
   duplicated the custom capsule, so medicine became the plain jar (R117).
-- **Launcher.** Three rounds: abstract marks were rejected; the owner then supplied references (an alarm
+- **Launcher.** (Redrawn on 2026-11-26; see section 4.) Three rounds: abstract marks were rejected; the owner then supplied references (an alarm
   clock with capsules, a clipboard with a cross). The tile became the clipboard so the objects could be
   drawn larger. The owner redrew it in Affinity with outlines and details; the lines beside the cross were
   shortened so the cross survives at 24 px, and the mark was scaled into the 66 dp safe circle and centred
@@ -85,6 +85,29 @@ A second, independent read of the whole spec against these rules found more; the
   outlines in the muted text colour, the state colours and the strip's legend.
 - **Wording.** Today's label at weight 600 (R115 caps weight at 600), the scale mixing in OKLab, the hue
   floor's rounding, the OLED claim marked as computed, and R115's check named on the OnePlus 9 Pro.
+
+A third read, of what Compose and Android draw on their own, found more; the owner settled these:
+
+- **Role mapping (R122).** A snackbar's action (inversePrimary, the link on the text colour) measured 1.3 to
+  1.9:1, and text on the accent 1.4 to 1.8:1 in dark mode. inversePrimary now takes the other mode's link
+  (6.5 to 9.9:1), and onTertiary whichever of text and card reads better.
+- **Selected states and the disabled fill (R122).** Containers in the card colour hid every selected chip,
+  tab and navigation item. Three containers per palette and mode were searched against the whole palette
+  (text on them at least 7:1, at least 10 ΔE2000 from card, ground, taken and error), taking two more runs:
+  the first reached its floor through chroma (a neon mint in Murano light), the second turned some
+  containers grey. The owner asked for a disabled fill that does not almost disappear; it is now the card's
+  hue, 6 to 10 ΔE2000 from the card (5.4 in Capsule dark). Board: `docs/design/containers.png`.
+- **Type roles (R115).** Compose draws the eight Material 3 type roles R115 did not set in Roboto; all
+  fifteen now map onto R115's seven.
+- **System surfaces (R114, R116, R117).** The band runs under the status bar with icons in the on-main
+  colour; the profile list and device settings carry only their title, in the device palette; icons take
+  the colour of the text beside them. Board: `docs/design/system-and-type.png`.
+- **Launcher and splash (R118).** The owner redrew the icon in Affinity: a lighter tile (#3C5DB9, so the ink
+  outline shows at 2.34:1 against 1.69:1 on the band's cobalt), a green cross, 1.5 dp outlines, and the
+  drawing centred by measurement and lifted 1 dp. Its capsule repeated the tile and the cross (0 ΔE2000), so
+  four colourings were measured; the owner took red and cyan, the boldest, as the launcher's one exception
+  to R114's red rule (worst pair red against saffron, 13.0 ΔE2000 in deutan vision). The splash shows the
+  tile-less foreground on #3C5DB9 in light and dark, so a dark-mode user is not dazzled.
 
 ## 5. Not checked, and left for the phase that builds each screen
 

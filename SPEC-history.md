@@ -169,3 +169,9 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R116 · changed · no wordmark row; band sizes; main screen and shown profiles defined · owner
 - 2026-11-26 · R120 · changed · today's label at weight 600; legend under the strip, as on the mock-up · owner
 - 2026-11-26 · spec · changed · glossary: "Palette", "Band" and "Blister strip" added · owner
+- 2026-11-26 · R114 · changed · device settings join the screens with no profile; the launcher's capsule is the one red outside the error colour · owner
+- 2026-11-26 · R115 · changed · all fifteen Material 3 type roles mapped onto the seven roles · owner
+- 2026-11-26 · R116 · changed · band under the status bar; profile list and device settings carry the title only · owner
+- 2026-11-26 · R117 · changed · icons take the colour of the text beside them · owner
+- 2026-11-26 · R118 · changed · owner's redrawn icon: #3C5DB9 tile, green cross, red and cyan capsule, 1.5 dp outlines; splash on #3C5DB9 · owner
+- 2026-11-26 · R122 · changed · three containers and a disabled fill per palette and mode; inversePrimary and onTertiary corrected · owner
