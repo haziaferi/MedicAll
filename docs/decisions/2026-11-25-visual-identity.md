@@ -110,6 +110,10 @@ A third read, of what Compose and Android draw on their own, found more; the own
   four colourings were measured; the owner took red and cyan, the boldest, as the launcher's one exception
   to R114's red rule (worst pair red against saffron, 13.0 ΔE2000 in deutan vision). The splash shows the
   tile-less foreground on #3C5DB9 in light and dark, so a dark-mode user is not dazzled.
+- **Launcher colours and R93.** Building the Compose theme found that R93 banned every colour literal
+  outside the theme, while R118's tile, capsule and splash colours can only be literals in Android's
+  resources, drawn before the app's theme exists. The owner exempted the launcher icon and splash screen
+  in R93, as R114 already exempts the launcher's red.
 
 ## 5. Not checked, and left for the phase that builds each screen
 

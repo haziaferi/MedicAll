@@ -7,8 +7,9 @@ import kotlin.test.assertTrue
 
 /**
  * SPEC:R93, SPEC:R122: no colour literal appears outside the theme. Every Kotlin, Gradle and XML source in the
- * repository is read, except the theme's own package (its sources and these tests) and the icon drawables, which are
- * black masks that Icon recolours (checked in [ShapeSpaceIconTest]).
+ * repository is read, except the theme's own package (its sources and these tests), the icon drawables, which are
+ * black masks that Icon recolours (checked in [ShapeSpaceIconTest]), and the launcher icon and splash screen, which
+ * R93 exempts: Android resource files named `ic_launcher*`, `launcher*` or `splash*`, whose colours R118 fixes.
  */
 class NoColourLiteralTest {
 
@@ -25,11 +26,29 @@ class NoColourLiteralTest {
     private val themeDir = Regex("""[/\\]kotlin[/\\]com[/\\]hazia[/\\]medicall[/\\]ui[/\\]theme[/\\]""")
     private val iconDrawables = File(ROOT, "ui/src/commonMain/composeResources/drawable").canonicalFile
 
+    /** The launcher icon's and splash screen's Android resources (R93's exemption, R118's colours). */
+    private val launcherResource =
+        Regex("""[/\\]android[/\\]src[/\\][^/\\]+[/\\]res[/\\][^/\\]+[/\\](?:ic_launcher|launcher|splash)[^/\\]*\.xml$""")
+
     private fun sources(): List<File> = ROOT.walkTopDown()
         .onEnter { it.name !in skippedDirs && it.canonicalFile != iconDrawables }
         .filter { it.isFile && it.extension in setOf("kt", "kts", "xml") }
-        .filterNot { themeDir.containsMatchIn(it.path) }
+        .filterNot { themeDir.containsMatchIn(it.path) || launcherResource.containsMatchIn(it.path) }
         .toList()
+
+    @Test
+    fun onlyTheLaunchersResourcesAreExempt_SPEC_R93() {
+        for (p in listOf(
+            "/r/android/src/main/res/mipmap-anydpi/ic_launcher.xml", "/r/android/src/main/res/drawable/ic_launcher_foreground.xml",
+            "/r/android/src/main/res/values/launcher.xml", "/r/android/src/main/res/values/splash.xml",
+            "C:\\r\\android\\src\\main\\res\\values-night\\splash.xml",
+        )) assertTrue(launcherResource.containsMatchIn(p), p)
+        for (p in listOf(
+            "/r/android/src/main/res/values/themes.xml", "/r/android/src/main/res/values/colors.xml",
+            "/r/android/src/main/kotlin/com/hazia/medicall/SplashActivity.kt", "/r/ui/src/main/res/values/splash.xml",
+            "/r/android/src/main/AndroidManifest.xml",
+        )) assertTrue(!launcherResource.containsMatchIn(p), p)
+    }
 
     @Test
     fun noColourLiteralOutsideTheTheme_SPEC_R93() {

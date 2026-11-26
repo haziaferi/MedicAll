@@ -1494,7 +1494,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Evidence:** The options, renders and measurements are in `docs/decisions/2026-11-25-visual-identity.md`, and the agreed mock-up is `docs/design/identity.png`. The visual-craft skill led the process; palettes were fitted and audited with color-optimization-core, and drawings were checked with the svg-illustration loop (owner, 2026-11-25).
 
-**Acceptance:** Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
+**Acceptance:** Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt, and so are the launcher icon and splash screen, whose colours R118 fixes because Android draws them before the app's theme.
 
 **Not:** Reusing the palette or design of another of the owner's apps; a stock Material look.
 
@@ -1938,7 +1938,7 @@ Text on every container takes the text colour.
 - R89 · Hormonal contraception switch: Adding a contraceptive raises the suggestion; a change in logged flow alone never does.
 - R90 · Pregnancy and fertility bundle: With the bundle off, no pregnancy or ovulation item appears; logging a pregnancy pauses period predictions.
 - R91 · Bundles: Turning a bundle on switches on its contents for that profile only, and turning it off hides them without deleting entries.
-- R93 · Visual identity: Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
+- R93 · Visual identity: Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt, and so are the launcher icon and splash screen, whose colours R118 fixes because Android draws them before the app's theme.
 - R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 - R115 · Type: On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column; the Compose theme sets all fifteen Material 3 type roles from the mapping, and no text is drawn in Roboto.
 - R116 · Shape, space and the band: With one shown profile the band reads the screen's title; once a second shown profile exists, every band leads with the open profile's name, except on the profile list and device settings; no main screen has a wordmark row; on the phones of R09 the status bar icons read against the band in light and dark.
