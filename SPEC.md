@@ -1577,7 +1577,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 
 ### D-R116 · Shape, space and the band
 
-**Rule:** Corners are 10 dp except on pills and switches, spacing follows a 4 dp grid with 20 dp screen margins and 16 dp card padding, and primary actions have 48 dp targets. Every main screen, one reached from the app's own navigation, opens straight with the band, with no wordmark row above it: the main colour with 12 dp by 20 dp padding, edged above and below by the accent's double rule as in Values, carrying the screen's title in the Title role. When two or more profiles are shown on the device (not hidden and not in the bin), the open profile's name takes the band's Title line and the screen's title moves to a Caption line below it, except where Values says otherwise.
+**Rule:** Corners are 10 dp except on pills and switches, spacing follows a 4 dp grid with 20 dp screen margins and 16 dp card padding, and primary actions have 48 dp targets. Every main screen, one reached from the app's own navigation, opens straight with the band, with no wordmark row above it: the main colour with 12 dp by 20 dp padding, running up under the status bar and edged below by the accent's double rule as in Values, carrying the screen's title in the Title role. When two or more profiles are shown on the device (not hidden and not in the bin), the open profile's name takes the band's Title line and the screen's title moves to a Caption line below it, except where Values says otherwise.
 
 **Why:** The band is the identity's signature, the painted band of the jar; most phones hold one profile (R14), so it carries the screen there, and a carer can never miss whose record is open.
 
@@ -1589,7 +1589,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | Outer accent line | 1 dp, 2 dp beyond the inner line |
 | Screens without a band | the lock screen (R119), first run, passphrase screens and dialogs |
 | Profile list and device settings | belong to no profile: the band carries only the screen's title, in the device palette (R114) |
-| Status bar over a band | the band runs up under it; its icons take the on-main colour |
+| Status bar over a band | the band runs up under it with no rule above; its icons take the on-main colour |
 | Status bar without a band | over the ground, icons in the text colour |
 | Navigation bar | transparent over the ground |
 

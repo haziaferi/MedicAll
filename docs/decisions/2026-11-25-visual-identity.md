@@ -101,7 +101,9 @@ A third read, of what Compose and Android draw on their own, found more; the own
   fifteen now map onto R115's seven.
 - **System surfaces (R114, R116, R117).** The band runs under the status bar with icons in the on-main
   colour; the profile list and device settings carry only their title, in the device palette; icons take
-  the colour of the text beside them. Board: `docs/design/system-and-type.png`.
+  the colour of the text beside them. Board: `docs/design/system-and-type.png`. A check after merging found
+  R116 still edging the band above and below; the owner dropped the upper rule, as on that board, and the
+  mock-up now shows the band under the status bar and the redrawn launcher.
 - **Launcher and splash (R118).** The owner redrew the icon in Affinity: a lighter tile (#3C5DB9, so the ink
   outline shows at 2.34:1 against 1.69:1 on the band's cobalt), a green cross, 1.5 dp outlines, and the
   drawing centred by measurement and lifted 1 dp. Its capsule repeated the tile and the cross (0 ΔE2000), so
