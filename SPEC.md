@@ -1700,7 +1700,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | Tertiary container | a third container where Material asks for one |
 | Error | only real errors, with an information icon and words |
 
-Text on every container takes the text colour.
+Text on each of the three containers takes the text colour; Material's error container is the card, and text on it takes the error colour.
 
 | Palette | Mode | Link | Focus | Switch on | Disabled | Error |
 |---|---|---|---|---|---|---|

@@ -180,3 +180,4 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R114 · changed · red defined as the error band, OKLCh hue 15 to 40 at chroma above 0.04 · owner
 - 2026-11-26 · R117 · changed · the selected navigation item takes the filled form of its icon · owner
 - 2026-11-26 · R115 · changed · tabular figures where figures align, in Atkinson roles; Fraunces figures stay proportional · owner
+- 2026-11-26 · R122 · changed · text colour on the three containers; the error container is the card, with error text · owner

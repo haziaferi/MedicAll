@@ -12,7 +12,7 @@ import com.hazia.medicall.core.look.Palette
  *
  * Material 3 1.9 also has twelve "fixed" roles, used by its expressive components, which R122's table does not name.
  * They follow R122's container rule: each fixed fill is its container, and the text on it is the text colour, as on
- * every container.
+ * each of the three containers.
  */
 fun colorSchemeOf(palette: Palette, dark: Boolean): ColorScheme {
     val c = coloursOf(palette, dark)
