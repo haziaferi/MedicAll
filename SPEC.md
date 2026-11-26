@@ -115,6 +115,7 @@ Kinds: O owner rule · D decided · I inherited · A assumed · Q open.
 | D-R118 | Launcher icon | 16. Visual design |
 | D-R119 | Lock screen look | 16. Visual design |
 | D-R120 | Week strip | 16. Visual design |
+| D-R121 | Scale colours | 16. Visual design |
 | D-R94 | Today screen | 16. Visual design |
 | D-R95 | Frontend decisions are the owner's | 16. Visual design |
 | D-R96 | A dose confirmed on two devices | 17. Edge cases |
@@ -902,11 +903,11 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R53 · Scale direction
 
-**Rule:** Every scale declares a direction: higher is better, higher is worse, or neutral. Wording and colour follow it, and a neutral scale never shows either end as good or bad.
+**Rule:** Every scale declares a direction: higher is better, higher is worse, or neutral. Wording follows it; colour shows only how high a step is (R121) and never marks either end as good or bad.
 
-**Acceptance:** A neutral scale is drawn with no green or red at either end.
+**Acceptance:** No scale, whatever its direction, is drawn with green or red at either end.
 
-**Since:** 2026-11-22 · owner · agreed rewording
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R54 · "Nothing today"
 
@@ -1486,21 +1487,21 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R93 · Visual identity
 
-**Rule:** MedicAll's visual identity is Albarello, taken from the Italian maiolica pharmacy jar: tin-glaze grounds, a cobalt band edged by a saffron double rule, Fraunces for titles and Atkinson Hyperlegible Next for everything else. R114 to R120 fix its parts, and a screen departs from them only by an owner ruling recorded here.
+**Rule:** MedicAll's visual identity is Albarello, taken from the Italian maiolica pharmacy jar: tin-glaze grounds, a cobalt band edged by a saffron double rule, Fraunces for titles and Atkinson Hyperlegible Next for everything else. R114 to R121 fix its parts, and a screen departs from them only by an owner ruling recorded here.
 
 **Why:** The owner chose it over three other directions (Capsule, Record card, Drawing wall), scored on four axes the owner set: calm, distinctive, legible at a glance and trustworthy. It is MedicAll's own and calm without being sterile.
 
 **Evidence:** The options, renders and measurements are in `docs/decisions/2026-11-25-visual-identity.md`, and the agreed mock-up is `docs/design/identity.png`. The visual-craft skill led the process; palettes were fitted and audited with color-optimization-core, and drawings were checked with the svg-illustration loop (owner, 2026-11-25).
 
-**Acceptance:** Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115 and R116.
+**Acceptance:** Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115, R116 and R121.
 
 **Not:** Reusing the palette or design of another of the owner's apps; a stock Material look.
 
-**Since:** 2026-11-25 · owner · agreed rewording
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R114 · Palettes
 
-**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced; a new profile starts on Albarello, and each palette has a light and a dark rendering. The band and primary buttons take the main colour, the double rule takes the accent, which is ornament only and never carries text, and a taken dose takes the taken colour. Light or dark follows the system unless the person sets it in the app.
+**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced; a new profile starts on Albarello, and light or dark is one setting for the whole device that follows the system unless the person sets it in the app. The band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, and the line colour serves only dividers and card edges.
 
 **Why:** A carer tells profiles apart at a glance by their colours (R14), and an adult who wants a more colourful app has one without a childish look. Each palette's taken colour was derived from that palette's own harmony, not picked by eye on one screen (owner, 2026-11-25).
 
@@ -1522,16 +1523,17 @@ People who live with several conditions keep medicines, appointments, lab report
 | Text and muted text on ground and card | at least 7:1 |
 | On-main label on the main colour | at least 7:1 |
 | Taken colour against the card | at least 3:1 in light, at least 5:1 in dark |
+| Control outline (text field, switch off track) against the card | at least 3:1 |
 | Dark-mode body text against its ground | under 15:1 |
 | Taken colour against main and accent, deutan and protan | at least 10 ΔE2000 |
 | Dark grounds | near-black, never #000000 |
 | Red | in no palette |
 
-**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass the phone checks for OLED smear and halation. Not checked: a switch's off track drawn in the line colour is under 3:1 against the card, so switches need a track token of their own when they are built.
+**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass the phone checks for OLED smear and halation. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26).
 
-**Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello.
+**Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello; the light or dark setting is the same for every profile on the device.
 
-**Since:** 2026-11-25 · owner · agreed rewording
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R115 · Type
 
@@ -1605,13 +1607,48 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R120 · Week strip
 
-**Rule:** A week of doses is shown as a blister strip: one row per dose time, one column per day, and today underlined in the accent. A taken dose is a solid pill in the taken colour, not yet is an outline, skipped is struck through and missed is dashed, with a legend beside the strip.
+**Rule:** A week of doses is shown as a blister strip: one row per dose time, one column per day, and today's day label set bold in the text colour and underlined in the accent. A taken dose is a solid pill in the taken colour, not yet is an outline, skipped is struck through and missed is dashed, with a legend beside the strip.
 
 **Why:** It borrows the blister pack, an object the person handles every day, and tells each state by shape (owner, 2026-11-25).
 
-**Acceptance:** In greyscale the four states are told apart.
+**Evidence:** The accent alone is too faint to mark today in Capsule light (2.2:1 on the card) and Albarello light (3.2:1), so the bold label carries it and the underline is ornament (owner, 2026-11-26).
 
-**Since:** 2026-11-25 · owner · agreed rewording
+**Acceptance:** In greyscale the four states and today are told apart.
+
+**Since:** 2026-11-26 · owner · agreed rewording
+
+### D-R121 · Scale colours
+
+**Rule:** Each palette and mode has the three scale colours in Values, and a scale step is drawn in its tracker's colour mixed toward the card, from 35% at the lowest step to full at the highest, with a marker that grows with the step. A chart gives each tracker one scale colour and its name beside its line; past three trackers the colours repeat with a different marker shape (circle, square, diamond, triangle). No scale colour is red or green, and none marks a value as good or bad (R53).
+
+**Why:** The owner asked for colours that show high and low by intensity rather than by green and red, kept apart from the palette's own colours (owner, 2026-11-26). Lightness carries the value, so a set shares one lightness and its colours differ by hue.
+
+**Values:**
+
+| Palette | Mode | Scale 1 | Scale 2 | Scale 3 |
+|---|---|---|---|---|
+| Albarello | light | #B04700 | #7D6DE0 | #B54F97 |
+| Albarello | dark | #01A2A7 | #998419 | #5C7EDE |
+| Plum & olive | light | #355097 | #894610 | #007D73 |
+| Plum & olive | dark | #968725 | #00998C | #7A79CC |
+| Capsule | light | #F66700 | #0F8DFF | #C648AD |
+| Capsule | dark | #0091BC | #B39105 | #AE78FF |
+| Murano | light | #3778EF | #00A1C2 | #C26A02 |
+| Murano | dark | #CDBE54 | #56DFDF | #83B9FF |
+
+| Floor | Value |
+|---|---|
+| Full step against the card | at least 3:1 |
+| Against each other and main, accent and taken, normal, deutan and protan | at least 10 ΔE2000 |
+| OKLCh hue | outside red (345 to 45) and green (110 to 185; 110 to 195 in Murano dark) |
+| Hue apart within a set | at least 40 degrees (60 in Murano dark) |
+| Lightness spread within a set | under 0.09 OKLCh |
+
+**Evidence:** Searched per palette and mode with color-optimization-core's colour maths on 2026-11-26 and shown in `docs/design/scales.png`: worst gap 10.4 (Plum & olive light) to 16.3, full steps 3.05 to 9.8:1 on the card. Four colours broke the floors in Albarello light, Plum & olive light and Capsule dark, so three is what holds in every palette. Gamut rounding left three hues on a band's edge (Albarello light's rust at 44.9, the teals at 184.3 and 185.1), which the owner accepted on the board; not checked: tritan vision, and pale low steps of two trackers against each other, which the marker and label carry.
+
+**Acceptance:** The Compose theme defines exactly these colours per palette and mode; a chart of five trackers names every line, and no two of its trackers share both colour and marker shape.
+
+**Since:** 2026-11-26 · owner · agreed rewording
 
 ### D-R94 · Today screen
 
@@ -1751,7 +1788,7 @@ People who live with several conditions keep medicines, appointments, lab report
 - R48 · Blood pressure: Three readings entered in one sitting show one averaged entry with the three readings beneath.
 - R51 · Daily log: Two entries on one day keep their own times and neither overwrites the other.
 - R52 · Tracker kinds: A part's kind cannot be edited after creation; the editor shows it, disabled; Mood stores its scale step and its words as two parts of one entry.
-- R53 · Scale direction: A neutral scale is drawn with no green or red at either end.
+- R53 · Scale direction: No scale, whatever its direction, is drawn with green or red at either end.
 - R54 · "Nothing today": A day answered "nothing today" counts in the y of an "x of y" count; a day with no answer does not.
 - R55 · Custom scale: A custom scale can be made with any number of steps from 2 to 10, and its preset reads "none / low / mid / high".
 - R56 · Ready-made trackers: Each tracker in the table can be switched on, and comes with the kind, direction and frequency of its row.
@@ -1791,14 +1828,15 @@ People who live with several conditions keep medicines, appointments, lab report
 - R89 · Hormonal contraception switch: Adding a contraceptive raises the suggestion; a change in logged flow alone never does.
 - R90 · Pregnancy and fertility bundle: With the bundle off, no pregnancy or ovulation item appears; logging a pregnancy pauses period predictions.
 - R91 · Bundles: Turning a bundle on switches on its contents for that profile only, and turning it off hides them without deleting entries.
-- R93 · Visual identity: Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115 and R116.
-- R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello.
+- R93 · Visual identity: Every screen built from phase 2b on takes its colours, faces, sizes and shapes only from R114, R115, R116 and R121.
+- R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile opens in Albarello; the light or dark setting is the same for every profile on the device.
 - R115 · Type: At 200% system font size and 320 dp width no text on a phase 2b screen is cut or overlaps, and the times in a dose list line up in a column.
 - R116 · Shape, space and the band: With one profile the band reads the screen's title; after a second profile is added, every band leads with the open profile's name.
 - R117 · Icons: No icon from another set appears in the app, and the three dose states are told apart in greyscale.
 - R118 · Launcher icon: The Android build's adaptive icon matches `docs/design/launcher.svg`, and no mask on the phones of R09 clips any part of it.
 - R119 · Lock screen look: On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
-- R120 · Week strip: In greyscale the four states are told apart.
+- R120 · Week strip: In greyscale the four states and today are told apart.
+- R121 · Scale colours: The Compose theme defines exactly these colours per palette and mode; a chart of five trackers names every line, and no two of its trackers share both colour and marker shape.
 - R96 · A dose confirmed on two devices: After the sync, the dose shows one confirmation and the stock falls once.
 - R97 · A profile removed: A removed and restored profile has the same record count as before.
 - R98 · Time zones and daylight saving: Emivita's daylight-saving scheduler tests pass in the port.

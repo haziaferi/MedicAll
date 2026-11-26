@@ -50,7 +50,26 @@ Fraunces 500 for titles, Atkinson Hyperlegible Next for everything else. The typ
 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25 from a 17 sp body (R115).
 Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures.
 
-## 4. Not checked
+## 4. Gaps closed before merging (2026-11-26)
+
+A pre-merge read of the rules against the rest of the spec found four gaps; the owner settled each.
+
+- **Status colours.** R53 let a scale's colour follow its direction, but the palettes ban red and have no
+  good/bad colours. The owner asked for scale colours that show high and low by intensity instead.
+  Each palette and mode got three (R121), searched against the palette's own main, accent and taken
+  colours with color-optimization-core's maths: no red or green hue, at least ΔE2000 10 apart in normal,
+  deutan and protan vision, one shared lightness per set so lightness can carry the value, and hues at
+  least 40 degrees apart. Four colours broke the floors in three palettes, so three hold everywhere and
+  charts add marker shapes past three trackers. Murano dark was searched twice more at the owner's
+  request, first to separate an aqua from a cyan, then to move the aqua off green. Board:
+  `docs/design/scales.png`. R53 now says colour shows only how high a step is.
+- **Control outlines.** The line colour is 1.3 to 1.4:1 on the card, too faint for a text field or a
+  switch's off track; those take the muted text colour (R114).
+- **Today in the week strip.** The accent underline alone is 2.2:1 in Capsule light, so today's label
+  is also set bold (R120).
+- **Light or dark.** One setting for the whole device, not per profile (R114).
+
+## 5. Not checked
 
 Everything was rendered in a headless browser at 1x, not on the phones of R09: the launcher masks, the
 icons at real pixel densities, and the reading screens at 200% font size are checked when phase 2b builds

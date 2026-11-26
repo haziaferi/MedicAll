@@ -157,3 +157,8 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-25 · R118 · added · launcher icon · owner
 - 2026-11-25 · R119 · added · lock screen look · owner
 - 2026-11-25 · R120 · added · week strip · owner
+- 2026-11-26 · R53 · changed · colour shows only how high a step is, never good or bad; no green or red on any scale · owner
+- 2026-11-26 · R93 · changed · R121 joins the identity's parts and its acceptance · owner
+- 2026-11-26 · R114 · changed · light or dark is one device setting; control outlines take the muted text colour · owner
+- 2026-11-26 · R120 · changed · today's label set bold, the accent underline is ornament · owner
+- 2026-11-26 · R121 · added · scale colours · owner
