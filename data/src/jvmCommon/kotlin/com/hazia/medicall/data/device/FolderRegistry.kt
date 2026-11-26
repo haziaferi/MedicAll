@@ -43,7 +43,9 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
         /**
          * [bytes] as [encode] wrote them, and whether every part read ([Decoded.whole]). No file is a first run
          * ([EMPTY]). Otherwise each part reads on its own: a folder entry that does not read is left out and the others
-         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off.
+         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off. A lock kept as
+         * [LockState.UNREADABLE] (written back after a set-aside) reads whole: it is still closed, and the file that
+         * did not read is already kept aside.
          */
         fun decode(bytes: ByteArray?): Decoded {
             if (bytes == null) return Decoded(EMPTY, whole = true)
@@ -61,11 +63,13 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
                         JoinedFolder(text("id")!!, text("label")!!, text("folder")!!, text("backup"))
                     }.getOrNull().also { if (it == null) whole = false }
                 }
-            val lockBytes = runCatching { (o.getValue("lock") as JsonObject).toString().encodeToByteArray() }.getOrNull()
-            val lock = lockBytes?.let(LockState::decode) ?: LockState.UNREADABLE
-            if (lock == LockState.UNREADABLE) whole = false
+            val lockJson = runCatching { o.getValue("lock") as JsonObject }.getOrNull()
+            val lock = lockJson?.let { LockState.decode(it.toString().encodeToByteArray()) } ?: LockState.UNREADABLE
+            if (lock == LockState.UNREADABLE && lockJson != UNREADABLE_LOCK) whole = false
             return Decoded(DeviceSettings(folders, lock), whole)
         }
+
+        private val UNREADABLE_LOCK = Json.parseToJsonElement(LockState.UNREADABLE.encode().decodeToString())
     }
 
     /** What [decode] read; [whole] is false when some part did not read, and the file should be kept aside. */
@@ -75,12 +79,16 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
 /**
  * The folders this device joins and its app lock (SPEC:R110, SPEC:R11), kept in [file]. Every change is
  * written at once, one at a time. No passphrase is kept here: each folder's is in the key store beside its
- * database key. A file that opens but does not read whole is set aside before anything is written over it, so
- * what it held is kept for repair; what did read is used meanwhile.
+ * database key. A file that opens but does not read whole is set aside, so what it held is kept for repair, and
+ * what did read is written back at once (a lock that did not read as [LockState.UNREADABLE], closed): the app may
+ * close before any change, and the next start must not find no file and read as a first run, the lock off.
  */
 class FolderRegistry(private val file: SealedFile) {
     private var settings = DeviceSettings.decode(file.read()).let { d ->
-        if (!d.whole) file.setAside()
+        if (!d.whole) {
+            file.setAside()
+            file.write(d.settings.encode())
+        }
         d.settings
     }
 
