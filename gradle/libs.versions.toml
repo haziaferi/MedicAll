@@ -12,6 +12,9 @@ kotlinxDatetime = "0.7.1"
 sqlite = "2.7.0"
 junit = "4.13.2"
 robolectric = "4.16.1"
+# The SDK 36 runtime Robolectric 4.16.1 loads (its DefaultSdkProvider table). Bump it with Robolectric:
+# the tests run offline (gradle/robolectric-offline.gradle.kts), so a stale value fails them by name.
+robolectricAndroidAll = "16-robolectric-13921718-i7"
 # 4.19.1 as in Emivita: the 4.x on-disk format is stable; SQLCipher 5 changes it and is a migration, not a bump.
 sqlcipher = "4.19.1"
 androidxTestExtJunit = "1.2.1"
@@ -43,6 +46,7 @@ androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", 
 androidx-sqlite-framework = { group = "androidx.sqlite", name = "sqlite-framework", version.ref = "sqlite" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+robolectric-android-all = { group = "org.robolectric", name = "android-all-instrumented", version.ref = "robolectricAndroidAll" }
 commons-compress = { group = "org.apache.commons", name = "commons-compress", version.ref = "commonsCompress" }
 xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 compose-runtime = { group = "org.jetbrains.compose.runtime", name = "runtime", version.ref = "composeMultiplatform" }

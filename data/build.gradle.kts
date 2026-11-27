@@ -70,6 +70,8 @@ dependencies {
     add("kspDesktop", libs.androidx.room.compiler)
 }
 
+apply(from = rootProject.file("gradle/robolectric-offline.gradle.kts"))
+
 // One database, one schema file per version, committed: a migration needs the previous version's file.
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
