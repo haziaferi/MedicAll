@@ -107,15 +107,33 @@ class KeyVault internal constructor(
         override fun read(): ByteArray? = when (val s = open(target)) {
             is Sealed.Opened -> s.bytes
             Sealed.Missing -> null
-            // Kept aside, never overwritten: a key store that answers again later may still open it.
-            Sealed.Lost -> null.also { setAside() }
+            // Moved aside, never overwritten: a key store that answers again later may still open it. Here the device
+            // starts as on a first run, the lock off (SPEC:R11), so the file is moved, not copied.
+            Sealed.Lost -> null.also { check(target.renameTo(lostName(target))) { "could not set aside ${target.name}" } }
         }
 
         override fun write(bytes: ByteArray) = seal(target, bytes)
 
-        override fun setAside() {
-            if (target.exists()) check(target.renameTo(File(target.path + LOST_SUFFIX + System.currentTimeMillis()))) { "could not set aside ${target.name}" }
+        // A copy, not a rename: [target] stays until [write] renames the new file over it.
+        override fun keepCopyAside() {
+            if (!target.exists()) return
+            val temp = File(target.path + ".tmp-" + java.util.UUID.randomUUID())
+            try {
+                java.io.FileOutputStream(temp).use { out ->
+                    target.inputStream().use { it.copyTo(out) }
+                    out.fd.sync()
+                }
+                check(temp.renameTo(lostName(target))) { "could not keep a copy of ${target.name}" }
+            } finally {
+                temp.delete()
+            }
         }
+    }
+
+    /** A name beside [target] that no kept copy holds yet, so a copy never replaces an older one. */
+    private fun lostName(target: File): File {
+        val stamp = target.path + LOST_SUFFIX + System.currentTimeMillis()
+        return generateSequence(0) { it + 1 }.map { File(if (it == 0) stamp else "$stamp-$it") }.first { !it.exists() }
     }
 
     /** Forgets the kept passphrase, as when the device leaves the folder; the database key stays beside its set-aside database. */
@@ -125,7 +143,9 @@ class KeyVault internal constructor(
 
     /**
      * Writes [plain] sealed to [target] in one step: to a temporary file of its own, flushed to the disk, then renamed
-     * over [target], so neither a power cut nor a second writer leaves a short or mixed file.
+     * over [target], so neither a power cut nor a second writer leaves a short or mixed file. The rename replaces
+     * [target] in one step on Android; [target] is never deleted first, so a rename that fails leaves it as it was,
+     * never no file (for the device's settings, a first run with the lock off).
      */
     private fun seal(target: File, plain: ByteArray) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -137,7 +157,7 @@ class KeyVault internal constructor(
                 out.write(sealed)
                 out.fd.sync()
             }
-            check(temp.renameTo(target) || (target.delete() && temp.renameTo(target))) { "could not store ${target.name}" }
+            check(temp.renameTo(target)) { "could not store ${target.name}" }
         } finally {
             temp.delete()
         }
@@ -207,7 +227,7 @@ class KeyVault internal constructor(
             KeyVault(context).sealedFile(File(context.applicationContext.filesDir, DEVICE_FILE_NAME))
 
         /** The key store's key, or null when it has none; throws when the key store cannot be read. */
-        private fun existingKey(): SecretKey? =
+        internal fun existingKey(): SecretKey? =
             (KeyStore.getInstance(KEYSTORE).apply { load(null) }.getEntry(ALIAS, null) as? KeyStore.SecretKeyEntry)?.secretKey
     }
 }

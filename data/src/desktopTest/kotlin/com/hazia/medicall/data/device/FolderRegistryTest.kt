@@ -14,15 +14,18 @@ import kotlin.test.assertTrue
 
 /** A sealed file held in memory, as the key store's file holds it on Android. */
 internal class MemorySealedFile(var bytes: ByteArray? = null) : SealedFile {
-    /** What [setAside] moved out of the way, oldest first. */
+    /** The copies [keepCopyAside] kept, oldest first. */
     val keptAside = mutableListOf<ByteArray>()
+
+    /** When set, [write] throws before changing anything, as when the app dies or the key store fails. */
+    var writeFails = false
     override fun read() = bytes?.copyOf()
     override fun write(bytes: ByteArray) {
+        if (writeFails) throw IllegalStateException("the key store did not answer")
         this.bytes = bytes.copyOf()
     }
-    override fun setAside() {
-        bytes?.let { keptAside += it }
-        bytes = null
+    override fun keepCopyAside() {
+        bytes?.let { keptAside += it.copyOf() }
     }
 }
 
@@ -139,6 +142,30 @@ class FolderRegistryTest {
         assertEquals(LockState.UNREADABLE, next.lock())
         assertTrue(next.folders().isEmpty())
         assertEquals(listOf("not settings"), file.keptAside.map { it.decodeToString() })
+    }
+
+    // Between keeping the copy and writing back, the app may die or the key store fail: the file must still be there.
+    @Test
+    fun aWriteThatFailsAfterTheCopyLeavesTheFileAndTheLockClosed_SPEC_R11() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val a = registry.add("Folder A", "content://tree/folder-a")
+        registry.saveLock(LockState.OFF.copy(pinHash = "00ff", salt = "0102"))
+        val damaged = file.bytes!!.decodeToString().replace(""""tries":0""", """"tries":-1""")
+        file.bytes = damaged.encodeToByteArray()
+
+        file.writeFails = true
+        assertFailsWith<IllegalStateException> { FolderRegistry(file) }
+        assertEquals(damaged, file.bytes!!.decodeToString(), "the file stays in place")
+        assertEquals(listOf(damaged), file.keptAside.map { it.decodeToString() })
+
+        file.writeFails = false
+        val next = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, next.lock())
+        assertEquals(listOf(a), next.folders())
+        assertEquals(listOf(damaged, damaged), file.keptAside.map { it.decodeToString() }, "a copy more, none lost")
+        assertEquals(LockState.UNREADABLE, FolderRegistry(file).lock())
+        assertEquals(2, file.keptAside.size, "what was written back reads whole")
     }
 
     @Test
