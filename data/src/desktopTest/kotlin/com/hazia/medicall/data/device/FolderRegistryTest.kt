@@ -109,6 +109,55 @@ class FolderRegistryTest {
         assertEquals(1, file.keptAside.size)
     }
 
+    // The app may close before anything is saved: the next start must not read as a first run with the lock off.
+    @Test
+    fun aSetAsideFileIsNeverReadAsAFirstRunNextTime_SPEC_R11() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val a = registry.add("Folder A", "content://tree/folder-a")
+        registry.saveLock(LockState.OFF.copy(pinHash = "00ff", salt = "0102"))
+        registry.saveLook(DeviceLook(LightDark.DARK, Palette.MURANO))
+        // The lock no longer reads (damaged, or written by a newer version).
+        file.bytes = file.bytes!!.decodeToString().replace(""""tries":0""", """"tries":-1""").encodeToByteArray()
+
+        assertEquals(LockState.UNREADABLE, FolderRegistry(file).lock())
+        // Closed before any change: no save happened.
+        val next = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, next.lock())
+        assertEquals(listOf(a), next.folders())
+        assertEquals(DeviceLook(LightDark.DARK, Palette.MURANO), next.look(), "the look is written back with the rest")
+        val third = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, third.lock())
+        assertEquals(1, file.keptAside.size, "what was written back reads whole and is not set aside again")
+    }
+
+    @Test
+    fun aFileThatDoesNotOpenAsSettingsStaysClosedNextTime_SPEC_R11() {
+        val file = MemorySealedFile("not settings".encodeToByteArray())
+        FolderRegistry(file)
+        val next = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, next.lock())
+        assertTrue(next.folders().isEmpty())
+        assertEquals(listOf("not settings"), file.keptAside.map { it.decodeToString() })
+    }
+
+    @Test
+    fun aBadFolderEntryIsNotLostNextTime_SPEC_R110() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        registry.add("Folder A", "content://tree/folder-a")
+        val b = registry.add("Folder B", "content://tree/folder-b")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        file.bytes = file.bytes!!.decodeToString().replace(""""folder":"content://tree/folder-a",""", "").encodeToByteArray()
+
+        FolderRegistry(file)
+        val next = FolderRegistry(file)
+        assertEquals(listOf(b), next.folders())
+        assertEquals(lock, next.lock())
+        assertEquals(1, file.keptAside.size)
+    }
+
     @Test
     fun theLookStartsOnAlbarelloFollowingTheSystem_SPEC_R114() {
         val registry = FolderRegistry(MemorySealedFile(null))
