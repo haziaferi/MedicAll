@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -27,6 +28,8 @@ android {
 
 dependencies {
     implementation(project(":data"))
+    implementation(project(":ui"))
+    implementation(libs.androidx.activity.compose)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     androidTestImplementation(libs.androidx.test.ext.junit)

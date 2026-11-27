@@ -2,6 +2,7 @@ package com.hazia.medicall.data
 
 import com.hazia.medicall.core.crypto.KeyFolder
 import com.hazia.medicall.core.crypto.Unlock
+import com.hazia.medicall.core.look.Palette
 import com.hazia.medicall.core.sync.Group
 import com.hazia.medicall.core.sync.Ids
 import com.hazia.medicall.core.sync.Row
@@ -184,6 +185,52 @@ class ProfileOnDeviceTest {
         // Set before the purge (then purged with it) or refused after it: never a database error.
         assertTrue(failures.all { it is IllegalArgumentException }, failures.map { it::class.simpleName to it.message }.distinct().toString())
         assertEquals(emptyList(), opened.single().profileDeviceDao().all())
+    }
+
+    @Test
+    fun aProfilesPaletteIsChosenOnEachDeviceAndNeverSynced_SPEC_R114() = runBlocking {
+        val a = device("dev-a")
+        val id = a.addProfile("Profile A")
+        a.syncNow()
+        val b = device("dev-b")
+        b.syncNow()
+        // A new profile opens in Albarello.
+        assertEquals(Palette.ALBARELLO, a.paletteHere(id))
+        assertEquals(Palette.ALBARELLO, b.paletteHere(id))
+
+        // Two rounds settle the folder: the control is that a round with no change leaves it as it was.
+        a.syncNow(); b.syncNow()
+        val settled = snapshot(syncRoot)
+        a.syncNow(); b.syncNow()
+        assertEquals(settled, snapshot(syncRoot), "the control: a round with no change")
+        val folderBefore = snapshot(syncRoot)
+        a.setPaletteHere(id, Palette.MURANO)
+        b.setPaletteHere(id, Palette.CAPSULE)
+        a.syncNow(); b.syncNow()
+        assertEquals(folderBefore, snapshot(syncRoot), "a palette changes no file in the sync folder")
+        assertEquals(Palette.MURANO, a.paletteHere(id))
+        assertEquals(Palette.CAPSULE, b.paletteHere(id))
+
+        val backupRoot = tmp.newFolder("backups").toPath()
+        assertIs<BackupResult.Written>(a.backUp(DirectoryBackupTarget(backupRoot)))
+        val archive = Files.list(backupRoot).use { s -> s.toList().single { it.toString().endsWith(".7z") } }.toFile()
+        for (name in assertNotNull(SevenZip.list(archive, passphrase))) {
+            val text = SevenZip.read(archive, passphrase, name)?.decodeToString().orEmpty()
+            assertFalse("murano" in text || "palette" in text, name)
+        }
+    }
+
+    @Test
+    fun aPaletteThisVersionDoesNotKnowIsAlbarello_SPEC_R114() = runBlocking {
+        val a = device("dev-a")
+        val id = a.addProfile("Profile A")
+        a.setShownHere(id, true)
+        opened.single().profileDeviceDao().setPalette(id, "a-later-palette")
+        assertEquals(Palette.ALBARELLO, a.paletteHere(id))
+        // Setting the palette leaves the other switches as they were.
+        a.setPaletteHere(id, Palette.PLUM_AND_OLIVE)
+        assertEquals(Palette.PLUM_AND_OLIVE, a.paletteHere(id))
+        assertTrue(a.shownHere(id))
     }
 
     @Test

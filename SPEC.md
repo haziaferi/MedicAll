@@ -1494,7 +1494,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 **Evidence:** The options, renders and measurements are in `docs/decisions/2026-11-25-visual-identity.md`, and the agreed mock-up is `docs/design/identity.png`. The visual-craft skill led the process; palettes were fitted and audited with color-optimization-core, and drawings were checked with the svg-illustration loop (owner, 2026-11-25).
 
-**Acceptance:** Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
+**Acceptance:** Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt, and so are the launcher icon and splash screen, whose colours R118 fixes because Android draws them before the app's theme.
 
 **Not:** Reusing the palette or design of another of the owner's apps; a stock Material look.
 
@@ -1502,7 +1502,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R114 · Palettes
 
-**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced, and screens that belong to no profile (lock, first run, passphrase, the profile list, the device's own settings) show a device palette the person chooses; both start on Albarello. Light or dark is one setting for the whole device that follows the system unless the person sets it in the app; the band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, and the line colour serves only dividers and card edges.
+**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced, and screens that belong to no profile (lock, first run, passphrase, the profile list, the device's own settings) show a device palette the person chooses; both start on Albarello. Light or dark is one setting for the whole device that follows the system unless the person sets it in the app; the band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, a focused text field's outline the main colour at 2 dp, and the line colour serves only dividers and card edges.
 
 **Why:** A carer tells profiles apart at a glance by their colours (R14), and an adult who wants a more colourful app has one without a childish look. Each palette's taken colour was derived from that palette's own harmony, not picked by eye on one screen (owner, 2026-11-25).
 
@@ -1528,17 +1528,17 @@ People who live with several conditions keep medicines, appointments, lab report
 | Dark-mode body text against its ground | under 15:1 |
 | Taken colour against main and accent, deutan and protan | at least 10 ΔE2000 |
 | Dark grounds | near-black, never #000000 |
-| Red | only the error colour (R122); the launcher icon's capsule is the one exception (R118) |
+| Red: OKLCh hue 15 to 40 at chroma above 0.04, R122's error band | only the error colour (R122); the launcher icon's capsule is the one exception (R118). Rose and pink outside the band, such as Capsule's taken colour and Murano's accent, are not red; scale colours keep further off (R121) |
 
-**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass color-optimization-core's phone checks for OLED smear and halation, computed from the values, not seen on a phone. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26).
+**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass color-optimization-core's phone checks for OLED smear and halation, computed from the values, not seen on a phone. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26). A focused text field keeps Material's outline in the main colour, 7.0 to 8.7:1 on the card; against the unfocused muted outline it changes hue more than lightness (1.0 to 1.2:1), so the focus shows mainly by the line growing from 1 to 2 dp, the label turning the main colour and the cursor (owner, 2026-11-27). Red was left undefined until the Compose theme measured every colour's hue: outside the error colours, the nearest to the band are Capsule's taken colour at 3.0 to 4.7 and Albarello light's scale 1 at 44.9, and Murano light's disabled grey sits inside it at 35.3 with chroma 0.019, which the chroma floor leaves out; the owner took the error band as red's definition (owner, 2026-11-26).
 
 **Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 
-**Since:** 2026-11-26 · owner · agreed rewording
+**Since:** 2026-11-27 · owner · agreed rewording
 
 ### D-R115 · Type
 
-**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next, with tabular figures wherever a time, dose or count appears. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
+**Rule:** Titles use Fraunces at weight 500 and everything else uses Atkinson Hyperlegible Next; times, doses and counts that stack in a column or tick in place, as a countdown does, are set in an Atkinson role with tabular figures, while digits each in a box of their own, as in the time and date pickers, and a Fraunces role's figures stay proportional. Sizes follow Values in sp, so they follow the system font size, and no weight above 600 is used.
 
 **Why:** Atkinson Hyperlegible was drawn for low-vision readers and tells similar letters and digits apart, which suits doses read when tired; a 1.25 ratio keeps headings calm on a phone.
 
@@ -1569,7 +1569,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | labelMedium | Label | navigation bar labels |
 | labelSmall | Caption | badges |
 
-**Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built. The Material 3 mapping is set in the faces on `docs/design/system-and-type.png`; it uses no size outside the seven roles, so a heading still outranks its content inside every component (owner, 2026-11-26).
+**Evidence:** Both faces are under the SIL Open Font License. Atkinson Hyperlegible Next 2.001 has the `tnum` feature and proportional digits by default, so tabular figures must be switched on. Fraunces has proportional figures only, with no `tnum`, while the mapping below draws the time picker's digits and the date picker's headline in it; each picker digit sits in its own box and a headline date or a strength in a name lines up with nothing, so the owner kept tabular figures to figures that align (owner, 2026-11-26). The type search proposed a 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25. Not checked: a 360 dp column holds about 38 characters at 17 sp, below the 50 to 70 that suits long reading, so reading-length screens need a check at 200% font size once built. The Material 3 mapping is set in the faces on `docs/design/system-and-type.png`; it uses no size outside the seven roles, so a heading still outranks its content inside every component (owner, 2026-11-26).
 
 **Acceptance:** On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column; the Compose theme sets all fifteen Material 3 type roles from the mapping, and no text is drawn in Roboto.
 
@@ -1601,13 +1601,13 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 
 ### D-R117 · Icons
 
-**Rule:** Generic controls use Phosphor's regular icons, and MedicAll's own objects use the custom set in `docs/design/icons`, drawn on the same 24 dp grid with a 1.5 dp stroke: medicine (a plain jar), dose taken, skipped and missed, tablet, capsule, drops, injection, skin patch and reference range. A status is told by shape and word, never by colour alone. An icon takes the colour of the text beside it: the on-main colour on the band, the muted text colour beside muted text and in an unselected navigation item, and the disabled colour when disabled; an icon alone takes the text colour, the taken icon the taken colour, and the information icon beside an error the error colour (R122).
+**Rule:** Generic controls use Phosphor's regular icons, and MedicAll's own objects use the custom set in `docs/design/icons`, drawn on the same 24 dp grid with a 1.5 dp stroke: medicine (a plain jar), dose taken, skipped and missed, tablet, capsule, drops, injection, skin patch and reference range; the selected navigation item takes the filled form of its icon (R122), Phosphor's fill weight or a custom icon's filled twin on the same grid. A status is told by shape and word, never by colour alone. An icon takes the colour of the text beside it: the on-main colour on the band, the muted text colour beside muted text and in an unselected navigation item, and the disabled colour when disabled; an icon alone takes the text colour, the taken icon the taken colour, and the information icon beside an error the error colour (R122).
 
 **Why:** No stock set draws dose states or medicine forms well, and Phosphor's pill would mean the same as the custom capsule, so medicine takes the jar (owner, 2026-11-25).
 
-**Evidence:** Each custom icon passes craftkit's checks at 24 dp. At 24 dp, taken, missed, tablet and injection read at once; skipped needs its word beside it, and the patch and reference range depend on context. Not checked: on a device at real pixel densities.
+**Evidence:** Each custom icon passes craftkit's checks at 24 dp. At 24 dp, taken, missed, tablet and injection read at once; skipped needs its word beside it, and the patch and reference range depend on context. In greyscale the selected navigation item's container shows at only 1.20 to 1.55:1 against the card, so its filled icon is its main non-colour mark, beside the label at weight 600 (owner, 2026-11-26). Not checked: on a device at real pixel densities.
 
-**Acceptance:** No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons.
+**Acceptance:** No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons; in greyscale the selected navigation item is told from the others by its filled icon.
 
 **Since:** 2026-11-26 · owner · agreed rewording
 
@@ -1691,7 +1691,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | Colour | Used for |
 |---|---|
 | Link | links, and a secondary button's label and outline |
-| Focus | a 3 dp focus ring drawn 2 dp off its control |
+| Focus | a 3 dp focus ring drawn 2 dp off its control; a text field shows focus by its own outline instead (R114) |
 | Switch on | a switch's on track, under a thumb in the card colour |
 | Disabled | disabled labels and outlines |
 | Disabled fill | a disabled filled button, which keeps its shape |
@@ -1700,7 +1700,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | Tertiary container | a third container where Material asks for one |
 | Error | only real errors, with an information icon and words |
 
-Text on every container takes the text colour.
+Text on each of the three containers takes the text colour; Material's error container is the card, and text on it takes the error colour.
 
 | Palette | Mode | Link | Focus | Switch on | Disabled | Error |
 |---|---|---|---|---|---|---|
@@ -1749,16 +1749,20 @@ Text on every container takes the text colour.
 | onSurface, onSurfaceVariant, surfaceVariant | text, muted text, ground |
 | primaryContainer, secondaryContainer, tertiaryContainer | the three containers |
 | onPrimaryContainer, onSecondaryContainer, onTertiaryContainer | text |
+| primaryFixed, primaryFixedDim | primary container |
+| secondaryFixed, secondaryFixedDim | secondary container |
+| tertiaryFixed, tertiaryFixedDim | tertiary container |
+| onPrimaryFixed, onPrimaryFixedVariant, onSecondaryFixed, onSecondaryFixedVariant, onTertiaryFixed, onTertiaryFixedVariant | text |
 | inverseSurface, inverseOnSurface, inversePrimary | text, card, the other mode's link |
 | outline, outlineVariant | muted text, line |
 | error, onError, errorContainer, onErrorContainer | error, card, card, error |
 | scrim | text |
 
-**Evidence:** Searched per palette and mode with color-optimization-core's colour maths against each whole palette on 2026-11-26 and shown in `docs/design/states.png`: links 7.8 to 11.5:1, errors 9.0 to 14.0:1 (4.55 and 4.9:1 in the two dark exceptions), focus 3.1 to 12.5:1, switches 3.7 to 7.4:1 and disabled 2.7 to 3.8:1 on the card, with every separation at 10.5 ΔE2000 or more. At 7:1 the dark-mode red of Capsule and Murano landed on their own rose and pink, so the owner took 4.5:1 there. Murano's link, focus and switch sit in its green main colour's family; R121's no-green floor is for scale colours only. A third read (owner, 2026-11-26) found that a container in the card colour hid every selected state and that two mapped pairs failed: a snackbar's action, the link on the text colour, at 1.3 to 1.9:1, and text on the accent at 1.4 to 1.8:1 in dark mode. The containers and the disabled fill were then searched the same way and shown in `docs/design/containers.png`: text on the containers 7.1 to 14.1:1, a snackbar's action in the other mode's link 6.5 to 9.9:1, and disabled labels on the disabled fill 2.55 to 3.6:1. The owner asked for a more visible disabled fill than the first search's, 3 to 5 ΔE2000 from the card; in Capsule dark a fill further than 5.4 from the card would drop its label below 2.5:1.
+**Evidence:** Searched per palette and mode with color-optimization-core's colour maths against each whole palette on 2026-11-26 and shown in `docs/design/states.png`: links 7.8 to 11.5:1, errors 9.0 to 14.0:1 (4.55 and 4.9:1 in the two dark exceptions), focus 3.1 to 12.5:1, switches 3.7 to 7.4:1 and disabled 2.7 to 3.8:1 on the card, with every separation at 10.5 ΔE2000 or more. At 7:1 the dark-mode red of Capsule and Murano landed on their own rose and pink, so the owner took 4.5:1 there. Murano's link, focus and switch sit in its green main colour's family; R121's no-green floor is for scale colours only. A third read (owner, 2026-11-26) found that a container in the card colour hid every selected state and that two mapped pairs failed: a snackbar's action, the link on the text colour, at 1.3 to 1.9:1, and text on the accent at 1.4 to 1.8:1 in dark mode. The containers and the disabled fill were then searched the same way and shown in `docs/design/containers.png`: text on the containers 7.1 to 14.1:1, a snackbar's action in the other mode's link 6.5 to 9.9:1, and disabled labels on the disabled fill 2.55 to 3.6:1. The owner asked for a more visible disabled fill than the first search's, 3 to 5 ΔE2000 from the card; in Capsule dark a fill further than 5.4 from the card would drop its label below 2.5:1. Building the Compose theme found Material 3 1.9's twelve fixed roles, used by its expressive components, unnamed here; the owner gave them the containers and the text colour (owner, 2026-11-26).
 
 **Acceptance:** The Compose theme sets every ColorScheme role from these tables and no colour literal appears outside it; a form that cannot be saved shows its message in the error colour with the icon; a wrong PIN, a missed dose and an out-of-range result show no error colour; a selected chip and the selected navigation item show their container and their non-colour mark in every palette.
 
-**Since:** 2026-11-26 · owner · agreed rewording
+**Since:** 2026-11-27 · owner · agreed rewording
 
 ### D-R94 · Today screen
 
@@ -1938,11 +1942,11 @@ Text on every container takes the text colour.
 - R89 · Hormonal contraception switch: Adding a contraceptive raises the suggestion; a change in logged flow alone never does.
 - R90 · Pregnancy and fertility bundle: With the bundle off, no pregnancy or ovulation item appears; logging a pregnancy pauses period predictions.
 - R91 · Bundles: Turning a bundle on switches on its contents for that profile only, and turning it off hides them without deleting entries.
-- R93 · Visual identity: Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt.
+- R93 · Visual identity: Every screen built from phase 2b on takes its colours only from R114, R121 and R122, its faces and sizes from R115, its shapes and spacing from R116 and its icons from R117, and no colour literal appears outside the theme; the system's own keyboard and dialogs are exempt, and so are the launcher icon and splash screen, whose colours R118 fixes because Android draws them before the app's theme.
 - R114 · Palettes: The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 - R115 · Type: On the OnePlus 9 Pro (Android 14) at 200% system font size, and at 320 dp width set with `adb shell wm size` and `wm density`, no text on any screen built from phase 2b on is cut or overlaps, and the times in a dose list line up in a column; the Compose theme sets all fifteen Material 3 type roles from the mapping, and no text is drawn in Roboto.
 - R116 · Shape, space and the band: With one shown profile the band reads the screen's title; once a second shown profile exists, every band leads with the open profile's name, except on the profile list and device settings; no main screen has a wordmark row; on the phones of R09 the status bar icons read against the band in light and dark.
-- R117 · Icons: No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons.
+- R117 · Icons: No icon from another set appears in the app, the three dose states are told apart in greyscale, and no icon takes a colour its text would not, except the taken and error icons; in greyscale the selected navigation item is told from the others by its filled icon.
 - R118 · Launcher icon: The Android build's adaptive icon matches `docs/design/launcher.svg`, with `launcher-foreground.svg` as its foreground; no mask on the phones of R09 clips any part of it; the splash screen shows the foreground on #3C5DB9 in light and dark.
 - R119 · Lock screen look: On the phones of R09, focusing the PIN field opens the system number keyboard, and the wait state shows the time left both in words and as the ring.
 - R120 · Week strip: In greyscale the four states and today are told apart.

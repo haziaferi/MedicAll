@@ -52,7 +52,7 @@ jobs:
       # Compiling is enough for CodeQL; no APK is packaged.
       - name: Build
         if: matrix.build-mode == 'manual'
-        run: ./gradlew --no-build-cache :android:compileDebugSources :core:compileKotlinDesktop :data:compileKotlinDesktop
+        run: ./gradlew --no-build-cache :android:compileDebugSources :core:compileKotlinDesktop :data:compileKotlinDesktop :ui:compileKotlinDesktop
 
       - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug builds only. Neither component reaches a release. -->
+<!-- Debug builds only. None of these components reaches a release. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <!-- A documents provider over app-private files, so the instrumented tests can open a Storage Access
@@ -33,5 +33,17 @@
             android:excludeFromRecents="true"
             android:noHistory="true"
             android:theme="@android:style/Theme.NoDisplay" />
+
+        <!-- The Compose theme's preview (SPEC:R93): every palette in light and dark, from its own launcher icon. -->
+        <activity
+            android:name=".ThemePreviewActivity"
+            android:exported="true"
+            android:label="MedicAll theme"
+            android:theme="@android:style/Theme.Material.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>
