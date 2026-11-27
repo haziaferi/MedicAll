@@ -1,6 +1,9 @@
 package com.hazia.medicall.data.device
 
 import com.hazia.medicall.core.lock.LockState
+import com.hazia.medicall.core.look.DeviceLook
+import com.hazia.medicall.core.look.LightDark
+import com.hazia.medicall.core.look.Palette
 import com.hazia.medicall.core.sync.Ids
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -22,8 +25,11 @@ data class JoinedFolder(val id: String, val label: String, val folderUri: String
     val databaseName: String get() = "medicall-$id.db"
 }
 
-/** Everything the device keeps apart from the folders' databases: the folders it joins and its app lock (SPEC:R11). */
-data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) {
+/**
+ * Everything the device keeps apart from the folders' databases: the folders it joins, its app lock (SPEC:R11) and
+ * its [look], light or dark and the device palette (SPEC:R114), which no folder and no backup holds.
+ */
+data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState, val look: DeviceLook = DeviceLook.DEFAULT) {
     fun encode(): ByteArray = buildJsonObject {
         put("v", JsonPrimitive(1))
         put("folders", JsonArray(folders.map { f ->
@@ -35,6 +41,10 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
             }
         }))
         put("lock", Json.parseToJsonElement(lock.encode().decodeToString()))
+        put("look", buildJsonObject {
+            put("lightDark", JsonPrimitive(look.lightDark.id))
+            put("palette", JsonPrimitive(look.palette.id))
+        })
     }.toString().encodeToByteArray()
 
     companion object {
@@ -43,7 +53,10 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
         /**
          * [bytes] as [encode] wrote them, and whether every part read ([Decoded.whole]). No file is a first run
          * ([EMPTY]). Otherwise each part reads on its own: a folder entry that does not read is left out and the others
-         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off.
+         * kept, and a lock that does not read stays closed ([LockState.UNREADABLE]), never off. A lock kept as
+         * [LockState.UNREADABLE] (written back after a set-aside) reads whole: it is still closed, and the file that
+         * did not read is already kept aside. The look's light/dark setting and palette each read on their own:
+         * missing (a file from before the look) or not read, each is [DeviceLook.DEFAULT]'s, and the file is still whole.
          */
         fun decode(bytes: ByteArray?): Decoded {
             if (bytes == null) return Decoded(EMPTY, whole = true)
@@ -61,11 +74,21 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
                         JoinedFolder(text("id")!!, text("label")!!, text("folder")!!, text("backup"))
                     }.getOrNull().also { if (it == null) whole = false }
                 }
-            val lockBytes = runCatching { (o.getValue("lock") as JsonObject).toString().encodeToByteArray() }.getOrNull()
-            val lock = lockBytes?.let(LockState::decode) ?: LockState.UNREADABLE
-            if (lock == LockState.UNREADABLE) whole = false
-            return Decoded(DeviceSettings(folders, lock), whole)
+            val lockJson = runCatching { o.getValue("lock") as JsonObject }.getOrNull()
+            val lock = lockJson?.let { LockState.decode(it.toString().encodeToByteArray()) } ?: LockState.UNREADABLE
+            if (lock == LockState.UNREADABLE && lockJson != UNREADABLE_LOCK) whole = false
+            // The look is only how the app looks: a part that does not read (a palette a later version added, say)
+            // is its default and leaves the file whole, so it is never set aside over a colour.
+            val l = runCatching { o.getValue("look").jsonObject }.getOrNull()
+            fun lookPart(key: String) = runCatching { l?.getValue(key)?.jsonPrimitive?.content }.getOrNull()
+            val look = DeviceLook(
+                lookPart("lightDark")?.let(LightDark::byId) ?: DeviceLook.DEFAULT.lightDark,
+                lookPart("palette")?.let(Palette::byId) ?: DeviceLook.DEFAULT.palette,
+            )
+            return Decoded(DeviceSettings(folders, lock, look), whole)
         }
+
+        private val UNREADABLE_LOCK = Json.parseToJsonElement(LockState.UNREADABLE.encode().decodeToString())
     }
 
     /** What [decode] read; [whole] is false when some part did not read, and the file should be kept aside. */
@@ -73,14 +96,18 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState) 
 }
 
 /**
- * The folders this device joins and its app lock (SPEC:R110, SPEC:R11), kept in [file]. Every change is
+ * The folders this device joins, its app lock and its look (SPEC:R110, SPEC:R11, SPEC:R114), kept in [file]. Every change is
  * written at once, one at a time. No passphrase is kept here: each folder's is in the key store beside its
- * database key. A file that opens but does not read whole is set aside before anything is written over it, so
- * what it held is kept for repair; what did read is used meanwhile.
+ * database key. A file that opens but does not read whole is set aside, so what it held is kept for repair, and
+ * what did read is written back at once (a lock that did not read as [LockState.UNREADABLE], closed): the app may
+ * close before any change, and the next start must not find no file and read as a first run, the lock off.
  */
 class FolderRegistry(private val file: SealedFile) {
     private var settings = DeviceSettings.decode(file.read()).let { d ->
-        if (!d.whole) file.setAside()
+        if (!d.whole) {
+            file.setAside()
+            file.write(d.settings.encode())
+        }
         d.settings
     }
 
@@ -114,6 +141,11 @@ class FolderRegistry(private val file: SealedFile) {
     @Synchronized fun lock(): LockState = settings.lock
 
     @Synchronized fun saveLock(state: LockState) = save(settings.copy(lock = state))
+
+    /** Light or dark and the device palette (SPEC:R114). */
+    @Synchronized fun look(): DeviceLook = settings.look
+
+    @Synchronized fun saveLook(look: DeviceLook) = save(settings.copy(look = look))
 
     private fun change(id: String, block: (JoinedFolder) -> JoinedFolder) {
         require(settings.folders.any { it.id == id }) { "no joined folder $id" }

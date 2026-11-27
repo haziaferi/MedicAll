@@ -1,6 +1,12 @@
 package com.hazia.medicall.data.device
 
 import com.hazia.medicall.core.lock.LockState
+import com.hazia.medicall.core.look.DeviceLook
+import com.hazia.medicall.core.look.LightDark
+import com.hazia.medicall.core.look.Palette
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -101,5 +107,116 @@ class FolderRegistryTest {
         assertEquals(listOf(b), again.folders())
         assertEquals(lock, again.lock())
         assertEquals(1, file.keptAside.size)
+    }
+
+    // The app may close before anything is saved: the next start must not read as a first run with the lock off.
+    @Test
+    fun aSetAsideFileIsNeverReadAsAFirstRunNextTime_SPEC_R11() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val a = registry.add("Folder A", "content://tree/folder-a")
+        registry.saveLock(LockState.OFF.copy(pinHash = "00ff", salt = "0102"))
+        registry.saveLook(DeviceLook(LightDark.DARK, Palette.MURANO))
+        // The lock no longer reads (damaged, or written by a newer version).
+        file.bytes = file.bytes!!.decodeToString().replace(""""tries":0""", """"tries":-1""").encodeToByteArray()
+
+        assertEquals(LockState.UNREADABLE, FolderRegistry(file).lock())
+        // Closed before any change: no save happened.
+        val next = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, next.lock())
+        assertEquals(listOf(a), next.folders())
+        assertEquals(DeviceLook(LightDark.DARK, Palette.MURANO), next.look(), "the look is written back with the rest")
+        val third = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, third.lock())
+        assertEquals(1, file.keptAside.size, "what was written back reads whole and is not set aside again")
+    }
+
+    @Test
+    fun aFileThatDoesNotOpenAsSettingsStaysClosedNextTime_SPEC_R11() {
+        val file = MemorySealedFile("not settings".encodeToByteArray())
+        FolderRegistry(file)
+        val next = FolderRegistry(file)
+        assertEquals(LockState.UNREADABLE, next.lock())
+        assertTrue(next.folders().isEmpty())
+        assertEquals(listOf("not settings"), file.keptAside.map { it.decodeToString() })
+    }
+
+    @Test
+    fun aBadFolderEntryIsNotLostNextTime_SPEC_R110() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        registry.add("Folder A", "content://tree/folder-a")
+        val b = registry.add("Folder B", "content://tree/folder-b")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        file.bytes = file.bytes!!.decodeToString().replace(""""folder":"content://tree/folder-a",""", "").encodeToByteArray()
+
+        FolderRegistry(file)
+        val next = FolderRegistry(file)
+        assertEquals(listOf(b), next.folders())
+        assertEquals(lock, next.lock())
+        assertEquals(1, file.keptAside.size)
+    }
+
+    @Test
+    fun theLookStartsOnAlbarelloFollowingTheSystem_SPEC_R114() {
+        val registry = FolderRegistry(MemorySealedFile(null))
+        assertEquals(DeviceLook(LightDark.SYSTEM, Palette.ALBARELLO), registry.look())
+    }
+
+    @Test
+    fun theLookIsKeptWithTheFoldersAndTheLock_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val folder = registry.add("Folder A", "content://tree/folder-a")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        for (lightDark in LightDark.entries) for (palette in Palette.entries) {
+            registry.saveLook(DeviceLook(lightDark, palette))
+            val again = FolderRegistry(file)
+            assertEquals(DeviceLook(lightDark, palette), again.look())
+            assertEquals(listOf(folder), again.folders())
+            assertEquals(lock, again.lock())
+        }
+        assertTrue(file.keptAside.isEmpty())
+    }
+
+    @Test
+    fun aFileFromBeforeTheLookReadsWhole_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        registry.add("Folder A", "content://tree/folder-a")
+        val withoutLook = Json.parseToJsonElement(file.bytes!!.decodeToString()).jsonObject.let { JsonObject(it - "look") }
+        file.bytes = withoutLook.toString().encodeToByteArray()
+
+        val again = FolderRegistry(file)
+        assertEquals(DeviceLook.DEFAULT, again.look())
+        assertEquals(1, again.folders().size)
+        assertTrue(file.keptAside.isEmpty())
+    }
+
+    @Test
+    fun aLookThatDoesNotReadIsTheDefaultAndNeverSetsTheFileAside_SPEC_R114() {
+        val file = MemorySealedFile()
+        val registry = FolderRegistry(file)
+        val folder = registry.add("Folder A", "content://tree/folder-a")
+        val lock = LockState.OFF.copy(pinHash = "00ff", salt = "0102")
+        registry.saveLock(lock)
+        registry.saveLook(DeviceLook(LightDark.DARK, Palette.MURANO))
+        val original = file.bytes!!.decodeToString()
+        // A palette this version does not know, as a later version may write; then a look that is not an object.
+        val cases = listOf(
+            original.replace(""""palette":"murano"""", """"palette":"no-such-palette"""") to DeviceLook(LightDark.DARK, Palette.DEFAULT),
+            original.replace(Regex(""""look":\{[^}]*\}"""), """"look":7""") to DeviceLook.DEFAULT,
+        )
+        for ((raw, expected) in cases) {
+            file.bytes = raw.encodeToByteArray()
+            assertEquals(expected, FolderRegistry(file).look())
+            // The file stays where it is, so the next start still has the folder and the lock, not a first run.
+            val next = FolderRegistry(file)
+            assertEquals(listOf(folder), next.folders())
+            assertEquals(lock, next.lock())
+        }
+        assertTrue(file.keptAside.isEmpty())
     }
 }

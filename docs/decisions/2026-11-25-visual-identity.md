@@ -49,7 +49,12 @@ Palettes from the owner's other apps were ruled out first, so none of the direct
 
 Fraunces 500 for titles, Atkinson Hyperlegible Next for everything else. The type search proposed a
 1.333 ratio, whose top step reaches 70 sp on a phone; the owner took 1.25 from a 17 sp body (R115).
-Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures.
+Atkinson Hyperlegible Next 2.001 has `tnum`, so times and doses use tabular figures. Fraunces has
+proportional figures only; building the Compose theme found R115 asking for tabular figures in it too
+(the time picker's digits, a date picker headline, a strength in a medicine name), and on 2026-11-26 the
+owner kept tabular figures to times, doses and counts that stack in a column or tick in place (a
+countdown), always in an Atkinson role, leaving proportional the pickers' digits, each in its own box,
+and a Fraunces role's figures.
 
 ## 4. Gaps closed before merging (2026-11-26)
 
@@ -110,6 +115,24 @@ A third read, of what Compose and Android draw on their own, found more; the own
   four colourings were measured; the owner took red and cyan, the boldest, as the launcher's one exception
   to R114's red rule (worst pair red against saffron, 13.0 ΔE2000 in deutan vision). The splash shows the
   tile-less foreground on #3C5DB9 in light and dark, so a dark-mode user is not dazzled.
+- **Launcher colours and R93.** Building the Compose theme found that R93 banned every colour literal
+  outside the theme, while R118's tile, capsule and splash colours can only be literals in Android's
+  resources, drawn before the app's theme exists. The owner exempted the launcher icon and splash screen
+  in R93, as R114 already exempts the launcher's red.
+- **What red is (R114).** R114 kept red for the error colour without defining it, and by R121's scale
+  band (hue 345 to 45) Capsule's taken colour (3 to 5) and Murano's accent (352 to 354) were red. The
+  owner defined red as R122's error band, OKLCh hue 15 to 40 at chroma above 0.04: only the eight error
+  colours sit there, so the rose and pink stay, and R121 keeps its wider band for scale colours.
+- **The selected navigation icon (R117, R122).** R122 asked for a filled icon on the selected item while
+  R117 allowed only Phosphor's regular weight. In greyscale the selected container shows at only 1.20 to
+  1.55:1 on the card, so the filled icon carries the selection. The owner allowed Phosphor's fill weight,
+  and filled twins of custom icons, for the selected navigation item only; they are added once phase 2b
+  settles the navigation destinations (R95).
+- **A focused text field (R114, R122; 2026-11-27).** Material draws a focused text field's outline in the main
+  colour at 2 dp, while R114 gave text-field outlines the muted text colour and R122 drew focus as a ring. The
+  owner kept Material's outline for a focused text field (7.0 to 8.7:1 on the card), with no ring; the change from
+  the muted outline is mostly hue (1.0 to 1.2:1), so the thicker line, the label in the main colour and the cursor
+  carry the focus.
 
 ## 5. Not checked, and left for the phase that builds each screen
 
@@ -122,6 +145,10 @@ them (R100). Left open, to settle before the screen that needs it:
 - Pain's 0 to 10 has eleven steps, against the glossary's "2 to 10 ordered steps" (an older conflict);
 - the week strip: a "late" state (the glossary has a late window), as-needed doses, pill size, and its fit
   at 320 dp;
+- the navigation bar at 200% font size on a 320 dp phone: the theme's desktop render
+  (`ui/build/theme-preview/*-320dp-200.png`, linear scaling) breaks three labels mid-word ("Medi cines").
+  Android 14's non-linear scaling grows 15 sp labels almost as much, so the destinations need short labels,
+  hyphenation or another layout, settled with the owner (R95); chips and buttons wrap in a FlowRow;
 - colours for lab range bands, app flags, out-of-range points and PDF charts (R44, R46): any new colour
   needs an owner ruling in R93's terms;
 - the Android notification icon and the themed (monochrome) launcher layer;
