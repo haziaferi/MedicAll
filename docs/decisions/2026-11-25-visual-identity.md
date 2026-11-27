@@ -128,6 +128,11 @@ A third read, of what Compose and Android draw on their own, found more; the own
   1.55:1 on the card, so the filled icon carries the selection. The owner allowed Phosphor's fill weight,
   and filled twins of custom icons, for the selected navigation item only; they are added once phase 2b
   settles the navigation destinations (R95).
+- **A focused text field (R114, R122; 2026-11-27).** Material draws a focused text field's outline in the main
+  colour at 2 dp, while R114 gave text-field outlines the muted text colour and R122 drew focus as a ring. The
+  owner kept Material's outline for a focused text field (7.0 to 8.7:1 on the card), with no ring; the change from
+  the muted outline is mostly hue (1.0 to 1.2:1), so the thicker line, the label in the main colour and the cursor
+  carry the focus.
 
 ## 5. Not checked, and left for the phase that builds each screen
 

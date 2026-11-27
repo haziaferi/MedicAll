@@ -182,3 +182,5 @@ Not a source of current rules: `SPEC.md` is. One line per change, newest at the 
 - 2026-11-26 · R115 · changed · tabular figures where figures align, in Atkinson roles; Fraunces figures stay proportional · owner
 - 2026-11-26 · R122 · changed · text colour on the three containers; the error container is the card, with error text · owner
 - 2026-11-26 · R122 · changed · Material 3 fixed roles take the containers and the text colour · owner
+- 2026-11-27 · R114 · changed · a focused text field's outline takes the main colour at 2 dp · owner
+- 2026-11-27 · R122 · changed · a text field shows focus by its own outline, not the focus ring · owner

@@ -1502,7 +1502,7 @@ People who live with several conditions keep medicines, appointments, lab report
 
 ### D-R114 · Palettes
 
-**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced, and screens that belong to no profile (lock, first run, passphrase, the profile list, the device's own settings) show a device palette the person chooses; both start on Albarello. Light or dark is one setting for the whole device that follows the system unless the person sets it in the app; the band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, and the line colour serves only dividers and card edges.
+**Rule:** Each profile shows one of the four palettes in Values, chosen on the device and never synced, and screens that belong to no profile (lock, first run, passphrase, the profile list, the device's own settings) show a device palette the person chooses; both start on Albarello. Light or dark is one setting for the whole device that follows the system unless the person sets it in the app; the band and primary buttons take the main colour, a taken dose the taken colour, and the accent's double rule is ornament only and never carries text. Text-field outlines and a switch's off track take the muted text colour, a focused text field's outline the main colour at 2 dp, and the line colour serves only dividers and card edges.
 
 **Why:** A carer tells profiles apart at a glance by their colours (R14), and an adult who wants a more colourful app has one without a childish look. Each palette's taken colour was derived from that palette's own harmony, not picked by eye on one screen (owner, 2026-11-25).
 
@@ -1530,11 +1530,11 @@ People who live with several conditions keep medicines, appointments, lab report
 | Dark grounds | near-black, never #000000 |
 | Red: OKLCh hue 15 to 40 at chroma above 0.04, R122's error band | only the error colour (R122); the launcher icon's capsule is the one exception (R118). Rose and pink outside the band, such as Capsule's taken colour and Murano's accent, are not red; scale colours keep further off (R121) |
 
-**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass color-optimization-core's phone checks for OLED smear and halation, computed from the values, not seen on a phone. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26). Red was left undefined until the Compose theme measured every colour's hue: outside the error colours, the nearest to the band are Capsule's taken colour at 3.0 to 4.7 and Albarello light's scale 1 at 44.9, and Murano light's disabled grey sits inside it at 35.3 with chroma 0.019, which the chroma floor leaves out; the owner took the error band as red's definition (owner, 2026-11-26).
+**Evidence:** Measured with color-optimization-core and craftkit on 2026-11-25: text on ground 12.9 to 14.7:1, on-main labels 7.7 to 9.1:1, taken pills on the card 3.6 to 6.5:1 in light and 5.0 to 9.1:1 in dark, worst colour-vision gap between taken, main and accent 12.9 (Capsule, dark). The dark grounds pass color-optimization-core's phone checks for OLED smear and halation, computed from the values, not seen on a phone. Control outlines in the muted text colour measure 7.5 to 8.6:1 on the card; the line colour, 1.3 to 1.4:1, is too faint to outline a control (owner, 2026-11-26). A focused text field keeps Material's outline in the main colour, 7.0 to 8.7:1 on the card; against the unfocused muted outline it changes hue more than lightness (1.0 to 1.2:1), so the focus shows mainly by the line growing from 1 to 2 dp, the label turning the main colour and the cursor (owner, 2026-11-27). Red was left undefined until the Compose theme measured every colour's hue: outside the error colours, the nearest to the band are Capsule's taken colour at 3.0 to 4.7 and Albarello light's scale 1 at 44.9, and Murano light's disabled grey sits inside it at 35.3 with chroma 0.019, which the chroma floor leaves out; the owner took the error band as red's definition (owner, 2026-11-26).
 
 **Acceptance:** The Compose theme defines exactly these values per palette and mode; changing a profile's palette changes no file in the sync folder; a new profile and a new device's lock screen open in Albarello; the light or dark setting is the same for every profile on the device.
 
-**Since:** 2026-11-26 · owner · agreed rewording
+**Since:** 2026-11-27 · owner · agreed rewording
 
 ### D-R115 · Type
 
@@ -1691,7 +1691,7 @@ Every Material 3 type role takes one of these, so Compose draws nothing in its d
 | Colour | Used for |
 |---|---|
 | Link | links, and a secondary button's label and outline |
-| Focus | a 3 dp focus ring drawn 2 dp off its control |
+| Focus | a 3 dp focus ring drawn 2 dp off its control; a text field shows focus by its own outline instead (R114) |
 | Switch on | a switch's on track, under a thumb in the card colour |
 | Disabled | disabled labels and outlines |
 | Disabled fill | a disabled filled button, which keeps its shape |
@@ -1762,7 +1762,7 @@ Text on each of the three containers takes the text colour; Material's error con
 
 **Acceptance:** The Compose theme sets every ColorScheme role from these tables and no colour literal appears outside it; a form that cannot be saved shows its message in the error colour with the icon; a wrong PIN, a missed dose and an out-of-range result show no error colour; a selected chip and the selected navigation item show their container and their non-colour mark in every palette.
 
-**Since:** 2026-11-26 · owner · agreed rewording
+**Since:** 2026-11-27 · owner · agreed rewording
 
 ### D-R94 · Today screen
 

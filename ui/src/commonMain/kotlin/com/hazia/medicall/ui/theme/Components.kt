@@ -120,11 +120,13 @@ object MedicAllComponents {
     /**
      * An outlined text field (SPEC:R114, SPEC:R122): outlined in the muted text colour; disabled, its text, label,
      * outline, icons and supporting text in the disabled colour, where Material draws its text colour at 38% alpha.
-     * Focused, Material's own outline (the main colour, 2 dp) shows the focus, so a text field takes no [focusRing].
+     * Focused, its outline takes the main colour at Material's 2 dp and shows the focus, so a text field takes no
+     * [focusRing] (SPEC:R114, SPEC:R122).
      */
     @Composable
     fun textFieldColours(): TextFieldColors = MedicAllTheme.colours.let { c ->
         OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = c.main,
             unfocusedBorderColor = c.mutedText,
             disabledTextColor = c.disabled,
             disabledBorderColor = c.disabled,

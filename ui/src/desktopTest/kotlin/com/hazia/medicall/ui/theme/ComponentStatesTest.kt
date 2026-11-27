@@ -75,6 +75,7 @@ class ComponentStatesTest {
                     disabledPrefixColor, disabledSuffixColor,
                 ).forEach { assertEquals(c.disabled, it, "$look text field") }
                 assertEquals(c.mutedText, unfocusedIndicatorColor, "$look text field outline (R114)")
+                assertEquals(c.main, focusedIndicatorColor, "$look focused text field outline (R114)")
             }
         }
     }
