@@ -17,7 +17,14 @@ import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyInputModifierNode
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.node.CompositionLocalConsumerModifierNode
+import androidx.compose.ui.node.PointerInputModifierNode
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.node.currentValueOf
@@ -28,8 +35,9 @@ import androidx.compose.ui.platform.InspectorInfo
 val FocusRingShape: Shape = RoundedCornerShape(CORNER + Space.focusRingGap + Space.focusRing / 2)
 
 /**
- * SPEC:R122's focus ring: while the control after this modifier has focus, a [Space.focusRing] ring in the focus colour
- * drawn [Space.focusRingGap] off it, so it is judged against the card. [ringShape] is the ring's own outline
+ * SPEC:R122's focus ring: while the control after this modifier has focus from the keyboard (or from code), a
+ * [Space.focusRing] ring in the focus colour drawn [Space.focusRingGap] off it, so it is judged against the card; a
+ * mouse click or tap that focuses it shows no ring, as a browser's `:focus-visible`. [ringShape] is the ring's own outline
  * ([FocusRingShape] around 10 dp corners, [PillShape] around a pill). The ring reaches 5 dp beyond the control, so
  * leave at least that much space around it. Put it before `clickable` or `focusable` on a control of MedicAll's own;
  * a Material control takes it through [FocusRingTarget]. Text fields show focus with their own outline and take none.
@@ -66,20 +74,55 @@ private data class FocusRingElement(val ringShape: Shape) : ModifierNodeElement<
     }
 }
 
+/**
+ * Shows the ring for focus that came from the keyboard or from code, as a browser's `:focus-visible` does: a mouse
+ * click or a tap that focuses the control shows none, and a key pressed while it has focus brings the ring back.
+ */
 private class FocusRingNode(var ringShape: Shape) :
-    Modifier.Node(), FocusEventModifierNode, DrawModifierNode, CompositionLocalConsumerModifierNode {
+    Modifier.Node(), FocusEventModifierNode, DrawModifierNode, CompositionLocalConsumerModifierNode,
+    PointerInputModifierNode, KeyInputModifierNode {
     private var focused = false
+    private var pressed = false
+    private var shown = false
 
-    override fun onFocusEvent(focusState: FocusState) {
-        if (focusState.isFocused != focused) {
-            focused = focusState.isFocused
+    private fun show(value: Boolean) {
+        if (shown != value) {
+            shown = value
             invalidateDraw()
         }
     }
 
+    override fun onFocusEvent(focusState: FocusState) {
+        if (focusState.isFocused == focused) return
+        focused = focusState.isFocused
+        show(focused && !pressed)
+        if (!focused) pressed = false
+    }
+
+    // The press reaches this node before the control inside it takes focus from it.
+    override fun onPointerEvent(pointerEvent: PointerEvent, pass: PointerEventPass, bounds: IntSize) {
+        when {
+            pass == PointerEventPass.Initial && pointerEvent.type == PointerEventType.Press -> {
+                pressed = true
+                show(false)
+            }
+            // Once the press is over, focus that comes later (a Tab into the control) shows the ring again.
+            pass == PointerEventPass.Final && pointerEvent.type == PointerEventType.Release -> pressed = false
+        }
+    }
+
+    override fun onCancelPointerInput() = Unit
+
+    override fun onPreKeyEvent(event: KeyEvent): Boolean {
+        if (focused) show(true)
+        return false
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean = false
+
     override fun ContentDrawScope.draw() {
         drawContent()
-        if (!focused) return
+        if (!shown) return
         val width = Space.focusRing.toPx()
         val inset = Space.focusRingGap.toPx() + width / 2
         val outline = ringShape.createOutline(Size(size.width + 2 * inset, size.height + 2 * inset), layoutDirection, this)

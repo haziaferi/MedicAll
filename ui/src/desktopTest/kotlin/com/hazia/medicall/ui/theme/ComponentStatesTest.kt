@@ -2,8 +2,20 @@ package com.hazia.medicall.ui.theme
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.material3.Button
 import androidx.compose.material3.SelectableChipColors
 import androidx.compose.material3.Text
@@ -103,6 +115,67 @@ class ComponentStatesTest {
                 // Nothing beyond the ring: 3 dp + 2 dp off the button, then the card again.
                 assertClose(c.card, bitmap.getColor(x, top - 6 * px), "$look beyond the ring")
             }
+        }
+    }
+
+    /**
+     * Real use on a phone and on Windows: a mouse click focuses a button but shows no ring, Tab from it shows the ring
+     * on the next one, the ring follows a palette change, and a tap beside a 40 dp button inside its 48 dp target
+     * still presses it.
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Test
+    fun theRingShowsForTheKeyboardNotTheMouse_SPEC_R122() {
+        var palette by mutableStateOf(Palette.ALBARELLO)
+        val bounds = arrayOfNulls<Rect>(2)
+        val clicks = IntArray(2)
+        var focusManager: FocusManager? = null
+        val scene = ImageComposeScene(900, 200, density = Density(2f))
+        var time = 0L
+        fun frame(): Bitmap = Bitmap.makeFromImage(scene.render(50_000_000L * time++))
+        fun ringAt(bitmap: Bitmap, i: Int): Int {
+            val b = assertNotNull(bounds[i])
+            return bitmap.getColor(b.center.x.toInt(), b.top.toInt() - 6) // 3 dp above: the ring's middle
+        }
+        try {
+            scene.setContent {
+                focusManager = LocalFocusManager.current
+                MedicAllTheme(palette, dark = false) {
+                    Row(Modifier.background(MedicAllTheme.colours.card).padding(24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        for (i in 0..1) FocusRingTarget { m ->
+                            Button(onClick = { clicks[i]++ }, m.onGloballyPositioned { bounds[i] = it.boundsInRoot() }) { Text("Button $i") }
+                        }
+                    }
+                }
+            }
+            repeat(3) { frame() }
+            // Both buttons at Material's 40 dp, so each sits inside a 48 dp target.
+            bounds.forEach { assertEquals(80f, assertNotNull(it).height, "a 40 dp button") }
+            val first = assertNotNull(bounds[0])
+            scene.sendPointerEvent(PointerEventType.Press, first.center, type = PointerType.Mouse)
+            scene.sendPointerEvent(PointerEventType.Release, first.center, type = PointerType.Mouse)
+            var bitmap = frame()
+            assertEquals(1, clicks[0])
+            assertClose(coloursOf(Palette.ALBARELLO, false).card, ringAt(bitmap, 0), "no ring after a mouse click")
+
+            // What Tab does: the focus manager moves focus on.
+            assertTrue(assertNotNull(focusManager).moveFocus(FocusDirection.Next), "focus moved")
+            bitmap = frame()
+            assertClose(coloursOf(Palette.ALBARELLO, false).focus, ringAt(bitmap, 1), "ring after Tab")
+            assertClose(coloursOf(Palette.ALBARELLO, false).card, ringAt(bitmap, 0), "ring left the first button")
+
+            palette = Palette.MURANO
+            repeat(2) { frame() }
+            assertClose(coloursOf(Palette.MURANO, false).focus, ringAt(frame(), 1), "ring after a palette change")
+
+            val second = assertNotNull(bounds[1])
+            val beside = Offset(second.center.x, second.top - 6f) // 3 dp above the button, inside its target
+            scene.sendPointerEvent(PointerEventType.Press, beside, type = PointerType.Touch)
+            scene.sendPointerEvent(PointerEventType.Release, beside, type = PointerType.Touch)
+            frame()
+            assertEquals(1, clicks[1], "a tap beside the button presses it")
+        } finally {
+            scene.close()
         }
     }
 
