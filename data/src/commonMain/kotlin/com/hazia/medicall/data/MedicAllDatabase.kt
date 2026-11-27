@@ -39,7 +39,11 @@ import com.hazia.medicall.data.sync.WaitingEntity
         BlobSeenEntity::class, BlobHeldEntity::class, ProfileOnDeviceEntity::class,
     ],
     version = SCHEMA_VERSION,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3, spec = BirthGroupSplit::class)],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        AutoMigration(from = 2, to = 3, spec = BirthGroupSplit::class),
+        AutoMigration(from = 3, to = 4),
+    ],
     exportSchema = true,
 )
 @ConstructedBy(MedicAllDatabaseConstructor::class)
@@ -77,9 +81,10 @@ const val DATABASE_NAME = "medicall.db"
 
 /**
  * The schema's version; a file below it is upgraded by Room's migrations on open. Version 2 adds the profile's
- * modules and origin (SPEC:R14); version 3 gives the birth date its own group's stamp (SPEC:R16).
+ * modules and origin (SPEC:R14); version 3 gives the birth date its own group's stamp (SPEC:R16); version 4 adds
+ * each profile's palette on this device (SPEC:R114), null for the default.
  */
-internal const val SCHEMA_VERSION = 3
+internal const val SCHEMA_VERSION = 4
 
 /**
  * Schema 2 to 3: the birth date starts with the stamp the details group gave it, so a peer's later change of

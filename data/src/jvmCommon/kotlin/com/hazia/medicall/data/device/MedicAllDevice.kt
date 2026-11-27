@@ -2,6 +2,7 @@ package com.hazia.medicall.data.device
 
 import com.hazia.medicall.core.lock.AppLock
 import com.hazia.medicall.core.lock.Verdict
+import com.hazia.medicall.core.look.DeviceLook
 import com.hazia.medicall.core.sync.Ids
 import com.hazia.medicall.data.MedicAllCore
 import com.hazia.medicall.data.Opened
@@ -37,6 +38,15 @@ class MedicAllDevice(
 
     /** The folders joined, in the order they were joined. */
     fun folders(): List<JoinedFolder> = registry.folders()
+
+    /**
+     * Light or dark for every profile on this device, and the device palette of the screens that belong to no
+     * profile (SPEC:R114). Kept on this device alone: nothing goes to a sync folder or a backup.
+     */
+    fun look(): DeviceLook = registry.look()
+
+    /** Sets [look] on this device alone. */
+    fun setLook(look: DeviceLook) = registry.saveLook(look)
 
     /** The open core of folder [folderId], or null when it is not open (its passphrase not at hand, or left). */
     fun core(folderId: String): MedicAllCore? = cores[folderId]

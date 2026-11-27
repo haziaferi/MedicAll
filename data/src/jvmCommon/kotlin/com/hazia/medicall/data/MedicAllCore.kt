@@ -6,6 +6,7 @@ import com.hazia.medicall.core.crypto.KeyFolder
 import com.hazia.medicall.core.crypto.LineCipher
 import com.hazia.medicall.core.crypto.Unlock
 import com.hazia.medicall.core.crypto.secureRandomBytes
+import com.hazia.medicall.core.look.Palette
 import com.hazia.medicall.core.sync.Group
 import com.hazia.medicall.core.sync.HybridClock
 import com.hazia.medicall.core.sync.Ids
@@ -189,6 +190,19 @@ class MedicAllCore private constructor(
 
     /** Sets [shownHere] on this device alone, as [setRemindersHere]. */
     suspend fun setShownHere(profileId: String, on: Boolean) = onThisDevice(profileId) { onDevice.setShown(profileId, on) }
+
+    /**
+     * Profile [profileId]'s palette on this device (SPEC:R114): as chosen here, Albarello by default and for an id
+     * this version does not know. Never synced, so each device shows the palette chosen on it.
+     */
+    suspend fun paletteHere(profileId: String): Palette {
+        profile(profileId)
+        return onDevice.get(profileId)?.palette?.let(Palette::byId) ?: Palette.DEFAULT
+    }
+
+    /** Sets [paletteHere] on this device alone, as [setRemindersHere]. */
+    suspend fun setPaletteHere(profileId: String, palette: Palette) =
+        onThisDevice(profileId) { onDevice.setPalette(profileId, palette.id) }
 
     private suspend fun profile(id: String) = requireNotNull(profiles.profiles(listOf(id)).singleOrNull()) { "no profile $id" }
 

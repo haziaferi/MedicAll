@@ -10,9 +10,9 @@ import androidx.room.Upsert
 
 /**
  * A profile's switches on this device alone (SPEC:R110): whether its reminders fire here and whether it is
- * shown here. Local, like `blob_seen`: not a synced table, so no trigger queues it for export and no backup
- * holds it. Null means the default: reminders on only on the device that created the profile, shown on.
- * A purged profile takes its row with it.
+ * shown here, and its palette here (SPEC:R114), by its id. Local, like `blob_seen`: not a synced table, so no
+ * trigger queues it for export and no backup holds it. Null means the default: reminders on only on the device
+ * that created the profile, shown on, Albarello. A purged profile takes its row with it.
  */
 @Entity(
     tableName = "profile_device",
@@ -22,6 +22,7 @@ internal data class ProfileOnDeviceEntity(
     @PrimaryKey @ColumnInfo(name = "profile_id") val profileId: String,
     val reminders: Boolean? = null,
     val shown: Boolean? = null,
+    val palette: String? = null,
 )
 
 @Dao
@@ -48,4 +49,11 @@ internal interface ProfileOnDeviceDao {
             "ON CONFLICT(profile_id) DO UPDATE SET shown = excluded.shown"
     )
     suspend fun setShown(profileId: String, shown: Boolean)
+
+    /** Sets [palette] alone, in one statement, as [setReminders]. */
+    @Query(
+        "INSERT INTO profile_device(profile_id, palette) VALUES (:profileId, :palette) " +
+            "ON CONFLICT(profile_id) DO UPDATE SET palette = excluded.palette"
+    )
+    suspend fun setPalette(profileId: String, palette: String)
 }
