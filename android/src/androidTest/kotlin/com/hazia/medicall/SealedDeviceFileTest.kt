@@ -8,10 +8,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.security.KeyStoreException
 import java.util.UUID
 
 /** The device's settings file and the vaults of joined folders, on a real key store (SPEC:R10, SPEC:R110). Throwaway names only. */
@@ -51,6 +53,26 @@ class SealedDeviceFileTest {
         assertEquals(1, copies.size)
         val kept = assertNotNull(KeyVault(context).sealedFile(copies.single()).read())
         assertEquals("not settings", kept.decodeToString())
+        assertTrue("no temporary file is left", context.filesDir.listFiles { f -> f.name.startsWith(settings.name + ".tmp-") }!!.isEmpty())
+    }
+
+    // The key store answers the read, then fails as the settings are written back: the file must still be there.
+    @Test
+    fun aWriteThatFailsAfterTheCopyLeavesTheFileAndTheLockClosed_SPEC_R11() {
+        KeyVault(context).sealedFile(settings).write("not settings".encodeToByteArray())
+        val sealed = settings.readBytes()
+        var calls = 0
+        val failing = KeyVault(context, File(context.filesDir, "unused-key-$run.sealed")) {
+            if (calls++ == 0) KeyVault.existingKey() else throw KeyStoreException("the key store did not answer")
+        }
+        assertThrows(KeyStoreException::class.java) { FolderRegistry(failing.sealedFile(settings)) }
+        assertTrue("the settings file is left as it was", sealed contentEquals settings.readBytes())
+
+        assertEquals(LockState.UNREADABLE, FolderRegistry(KeyVault(context).sealedFile(settings)).lock())
+        assertEquals(LockState.UNREADABLE, FolderRegistry(KeyVault(context).sealedFile(settings)).lock())
+        val copies = context.filesDir.listFiles { f -> f.name.startsWith(settings.name + KeyVault.LOST_SUFFIX) }!!.toList()
+        assertEquals("one copy per start that did not write back, none lost", 2, copies.size)
+        for (copy in copies) assertEquals("not settings", assertNotNull(KeyVault(context).sealedFile(copy).read()).decodeToString())
         assertTrue("no temporary file is left", context.filesDir.listFiles { f -> f.name.startsWith(settings.name + ".tmp-") }!!.isEmpty())
     }
 
