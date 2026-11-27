@@ -5,6 +5,9 @@
 //
 // Applied by each module whose JVM tests use Robolectric. It covers the Test tasks AGP makes for them
 // (testDebugUnitTest, testAndroidHostTest), not the desktop target's.
+//
+// Only the SDK 36 jar is here (targetSdk, and @Config(sdk = [36]) in :data). A test run on another SDK
+// fails with "Unable to locate dependency" until that SDK's jar is added to robolectricRuntime.
 
 val robolectricRuntime = configurations.create("robolectricRuntime") {
     isCanBeConsumed = false
