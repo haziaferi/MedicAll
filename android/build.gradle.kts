@@ -33,3 +33,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core)
 }
+
+apply(from = rootProject.file("gradle/robolectric-offline.gradle.kts"))
