@@ -107,16 +107,30 @@ class KeyVault internal constructor(
         override fun read(): ByteArray? = when (val s = open(target)) {
             is Sealed.Opened -> s.bytes
             Sealed.Missing -> null
-            // Kept aside, never overwritten: a key store that answers again later may still open it.
-            Sealed.Lost -> null.also { setAside() }
+            // Moved aside, never overwritten: a key store that answers again later may still open it. Here the device
+            // starts as on a first run, the lock off (SPEC:R11), so the file is moved, not copied.
+            Sealed.Lost -> null.also { check(target.renameTo(lostName(target))) { "could not set aside ${target.name}" } }
         }
 
         override fun write(bytes: ByteArray) = seal(target, bytes)
 
-        override fun setAside() {
-            if (target.exists()) check(target.renameTo(File(target.path + LOST_SUFFIX + System.currentTimeMillis()))) { "could not set aside ${target.name}" }
+        // A copy, not a rename: [target] stays until [write] renames the new file over it.
+        override fun keepCopyAside() {
+            if (!target.exists()) return
+            val temp = File(target.path + ".tmp-" + java.util.UUID.randomUUID())
+            try {
+                java.io.FileOutputStream(temp).use { out ->
+                    target.inputStream().use { it.copyTo(out) }
+                    out.fd.sync()
+                }
+                check(temp.renameTo(lostName(target))) { "could not keep a copy of ${target.name}" }
+            } finally {
+                temp.delete()
+            }
         }
     }
+
+    private fun lostName(target: File) = File(target.path + LOST_SUFFIX + System.currentTimeMillis())
 
     /** Forgets the kept passphrase, as when the device leaves the folder; the database key stays beside its set-aside database. */
     fun forgetPassphrase() {

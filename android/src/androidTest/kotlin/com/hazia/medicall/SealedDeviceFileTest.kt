@@ -2,6 +2,7 @@ package com.hazia.medicall
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.hazia.medicall.core.lock.LockState
 import com.hazia.medicall.data.device.FolderRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -35,6 +36,22 @@ class SealedDeviceFileTest {
 
         val again = FolderRegistry(KeyVault(context).sealedFile(settings)).folders()
         assertEquals(listOf("Folder A"), again.map { it.label })
+    }
+
+    // A sealed file that opens but is not settings: kept aside once, as a copy, and the lock stays closed on every start.
+    @Test
+    fun aDeviceFileThatDoesNotReadStaysClosedAndIsKeptAsideOnce_SPEC_R11() {
+        KeyVault(context).sealedFile(settings).write("not settings".encodeToByteArray())
+
+        repeat(2) {
+            assertEquals(LockState.UNREADABLE, FolderRegistry(KeyVault(context).sealedFile(settings)).lock())
+            assertTrue("the settings file stays in place", settings.exists())
+        }
+        val copies = context.filesDir.listFiles { f -> f.name.startsWith(settings.name + KeyVault.LOST_SUFFIX) }!!.toList()
+        assertEquals(1, copies.size)
+        val kept = assertNotNull(KeyVault(context).sealedFile(copies.single()).read())
+        assertEquals("not settings", kept.decodeToString())
+        assertTrue("no temporary file is left", context.filesDir.listFiles { f -> f.name.startsWith(settings.name + ".tmp-") }!!.isEmpty())
     }
 
     @Test

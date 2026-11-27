@@ -98,14 +98,16 @@ data class DeviceSettings(val folders: List<JoinedFolder>, val lock: LockState, 
 /**
  * The folders this device joins, its app lock and its look (SPEC:R110, SPEC:R11, SPEC:R114), kept in [file]. Every change is
  * written at once, one at a time. No passphrase is kept here: each folder's is in the key store beside its
- * database key. A file that opens but does not read whole is set aside, so what it held is kept for repair, and
- * what did read is written back at once (a lock that did not read as [LockState.UNREADABLE], closed): the app may
- * close before any change, and the next start must not find no file and read as a first run, the lock off.
+ * database key. A file that opens but does not read whole has a copy kept aside, so what it held is kept for repair,
+ * and what did read is written back over it at once (a lock that did not read as [LockState.UNREADABLE], closed): the
+ * app may close before any change, and the next start must not find no file and read as a first run, the lock off.
+ * The file stays in place until that write replaces it, so dying, or the key store failing, in between leaves the
+ * file as it was: the next start reads it closed again and keeps one more copy aside.
  */
 class FolderRegistry(private val file: SealedFile) {
     private var settings = DeviceSettings.decode(file.read()).let { d ->
         if (!d.whole) {
-            file.setAside()
+            file.keepCopyAside()
             file.write(d.settings.encode())
         }
         d.settings

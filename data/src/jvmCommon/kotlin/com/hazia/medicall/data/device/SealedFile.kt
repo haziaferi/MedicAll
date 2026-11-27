@@ -11,6 +11,10 @@ interface SealedFile {
     /** Replaces the whole file in one step, sealed. */
     fun write(bytes: ByteArray)
 
-    /** Moves the file out of the way, kept and never deleted, so the next [write] does not overwrite what it held. */
-    fun setAside()
+    /**
+     * Keeps a copy of the file as it is beside it, never deleted, so the next [write] does not lose what it held. The
+     * file itself stays in place until a [write] replaces it: an app that dies, or a key store that fails, between the
+     * two still finds the file on the next start, never no file (a first run, the lock off).
+     */
+    fun keepCopyAside()
 }
